@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace AkariApi.Controllers
 {
     [ApiController]
-    [Route("api/v2/manga")]
+    [Route("v2/manga")]
     [ApiVersion("2.0")]
     public class MangaController : ControllerBase
     {
