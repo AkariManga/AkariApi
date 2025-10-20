@@ -24,7 +24,7 @@ namespace AkariApi.Models
         public short Pages { get; set; }
 
         [Column("images")]
-        public string[] Images { get; set; } = [];
+        public string[] Images { get; set; } = Array.Empty<string>();
 
         [Column("created_at")]
         public DateTimeOffset CreatedAt { get; set; }
@@ -58,13 +58,13 @@ namespace AkariApi.Models
         public string Title { get; set; } = string.Empty;
 
         [Required]
-        public string[] Images { get; set; } = [];
+        public string[] Images { get; set; } = Array.Empty<string>();
 
         [Required]
         public float Number { get; set; }
 
         [Required]
-        public List<ChapterOption> Chapters { get; set; } = [];
+        public List<ChapterOption> Chapters { get; set; } = new List<ChapterOption>();
 
         [Required]
         public Guid MangaId { get; set; }

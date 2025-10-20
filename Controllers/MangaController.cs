@@ -123,13 +123,13 @@ namespace AkariApi.Controllers
                     AniId = manga.AniId,
                     CreatedAt = manga.CreatedAt,
                     UpdatedAt = manga.UpdatedAt,
-                    Chapters = [.. chaptersResponse.Models.Select(c => new MangaChapter
+                    Chapters = chaptersResponse.Models.Select(c => new MangaChapter
                     {
                         Id = c.Id,
                         Title = c.Title,
                         Number = c.Number,
                         Pages = c.Pages
-                    })]
+                    }).ToList()
                 };
 
                 return Ok(ApiResponse<MangaDetailResponse>.Success(response));

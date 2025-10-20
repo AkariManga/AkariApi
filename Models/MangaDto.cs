@@ -117,6 +117,6 @@ namespace AkariApi.Models
 
     public class MangaDetailResponse : MangaResponse
     {
-        public List<MangaChapter> Chapters { get; set; } = [];
+        public List<MangaChapter> Chapters { get; set; } = new List<MangaChapter>();
     }
 }
