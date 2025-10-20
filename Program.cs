@@ -18,6 +18,14 @@ builder.Services.AddSwaggerGen(options =>
     options.SwaggerDoc("v2", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "AkariApi v2", Version = "v2" });
     options.SchemaFilter<EnumSchemaFilter>();
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, "AkariApi.xml"));
+    if (builder.Environment.IsDevelopment())
+    {
+        options.AddServer(new Microsoft.OpenApi.Models.OpenApiServer { Url = "http://localhost:5188/" });
+    }
+    else
+    {
+        options.AddServer(new Microsoft.OpenApi.Models.OpenApiServer { Url = "https://api.akarimanga.dpdns.org/" });
+    }
 });
 
 builder.Services.AddApiVersioning(options =>
