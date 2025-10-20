@@ -10,6 +10,7 @@ namespace AkariApi.Controllers
     [ApiController]
     [Route("v2/manga")]
     [ApiVersion("2.0")]
+    [Produces("application/json")]
     public class MangaController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;
