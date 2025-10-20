@@ -96,21 +96,18 @@ namespace AkariApi.Controllers
             {
                 await _supabaseService.InitializeAsync();
 
-                var manga = await _supabaseService.Client
-                    .From<MangaDto>()
+                var response = await _supabaseService.Client
+                    .From<MangaWithChaptersDto>()
                     .Where(m => m.Id == id)
+                    .Select("*, chapters(*)")
                     .Single();
 
-                if (manga == null)
+                if (response == null)
                     return NotFound(ApiResponse<ErrorData>.Error("Manga not found", status: 404));
 
-                var chaptersResponse = await _supabaseService.Client
-                    .From<ChapterDto>()
-                    .Where(c => c.MangaId == id)
-                    .Order("number", Supabase.Postgrest.Constants.Ordering.Ascending)
-                    .Get();
-
-                var response = new MangaDetailResponse
+                var manga = response;
+                var sortedChapters = manga.Chapters?.OrderBy(c => c.Number).ToList() ?? new List<ChapterDto>();
+                var responseObj = new MangaDetailResponse
                 {
                     Id = manga.Id,
                     Title = manga.Title,
@@ -125,7 +122,7 @@ namespace AkariApi.Controllers
                     AniId = manga.AniId,
                     CreatedAt = manga.CreatedAt,
                     UpdatedAt = manga.UpdatedAt,
-                    Chapters = chaptersResponse.Models.Select(c => new MangaChapter
+                    Chapters = sortedChapters.Select(c => new MangaChapter
                     {
                         Id = c.Id,
                         Title = c.Title,
@@ -134,7 +131,7 @@ namespace AkariApi.Controllers
                     }).ToList()
                 };
 
-                return Ok(ApiResponse<MangaDetailResponse>.Success(response));
+                return Ok(ApiResponse<MangaDetailResponse>.Success(responseObj));
             }
             catch (Exception ex)
             {
