@@ -70,10 +70,13 @@ builder.Services.AddScoped<AkariApi.Services.SupabaseService>();
 var app = builder.Build();
 
 app.UseSwagger();
-app.UseSwaggerUI(options =>
+if (builder.Environment.IsDevelopment())
 {
-    options.SwaggerEndpoint("/swagger/v2/swagger.json", "AkariApi v2");
-});
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v2/swagger.json", "AkariApi v2");
+    });
+}
 
 app.UseHttpsRedirection();
 
