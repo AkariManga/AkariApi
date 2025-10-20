@@ -3,6 +3,7 @@ using AkariApi.Models;
 using AkariApi.Services;
 using AkariApi.Attributes;
 using System.Text.Json;
+using System.ComponentModel.DataAnnotations;
 
 namespace AkariApi.Controllers
 {
@@ -19,24 +20,24 @@ namespace AkariApi.Controllers
             _supabaseService = supabaseService;
         }
 
+        /// <summary>
+        /// Retrieves the latest manga with pagination.
+        /// </summary>
+        /// <param name="page">The page number.</param>
+        /// <param name="pageSize">The number of items per page.</param>
+        /// <returns>A list of the latest manga.</returns>
         [HttpGet("list/latest")]
         [CacheControl(600, 300)]
         [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
-        public async Task<IActionResult> GetLatestManga([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> GetLatestManga([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             if (pageSize > 100)
-            {
                 pageSize = 100;
-            }
             if (pageSize < 1)
-            {
                 pageSize = 20;
-            }
             if (page < 1)
-            {
                 page = 1;
-            }
 
             try
             {
@@ -85,6 +86,11 @@ namespace AkariApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Retrieves detailed information about a manga by its ID, including chapters.
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <returns>Detailed manga information.</returns>
         [HttpGet("{id}")]
         [CacheControl(3600, 600)]
         [ProducesResponseType(typeof(ApiResponse<MangaDetailResponse>), 200)]
@@ -139,6 +145,11 @@ namespace AkariApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Retrieves detailed information about a manga by its MyAnimeList ID.
+        /// </summary>
+        /// <param name="id">The MyAnimeList ID of the manga.</param>
+        /// <returns>Detailed manga information.</returns>
         [HttpGet("mal/{id}")]
         [CacheControl(3600, 600)]
         [ProducesResponseType(typeof(ApiResponse<MangaResponse>), 200)]
@@ -185,6 +196,12 @@ namespace AkariApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Retrieves a specific chapter of a manga by manga ID and chapter number.
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <param name="subId">The chapter number.</param>
+        /// <returns>The chapter details.</returns>
         [HttpGet("{id}/{subId}")]
         [CacheControl(86400, 604800)]
         [ProducesResponseType(typeof(ApiResponse<ChapterResponse>), 200)]
@@ -214,12 +231,18 @@ namespace AkariApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Searches for manga based on a query string with optional limit.
+        /// </summary>
+        /// <param name="query">The search query string.</param>
+        /// <param name="limit">The maximum number of results.</param>
+        /// <returns>A list of matching manga.</returns>
         [HttpGet("search")]
         [CacheControl(300, 60)]
         [ProducesResponseType(typeof(ApiResponse<List<MangaSearchResponse>>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
-        public async Task<IActionResult> SearchManga([FromQuery] string query, [FromQuery] int limit = 20)
+        public async Task<IActionResult> SearchManga([FromQuery] string query, [FromQuery, Range(1, 100)] int limit = 20)
         {
             if (string.IsNullOrWhiteSpace(query))
                 return BadRequest(ApiResponse<ErrorData>.Error("Search query is required"));
