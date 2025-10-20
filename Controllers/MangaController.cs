@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using AkariApi.Models;
 using AkariApi.Services;
+using AkariApi.Attributes;
 using System.Text.Json;
 
 namespace AkariApi.Controllers
@@ -19,7 +20,7 @@ namespace AkariApi.Controllers
         }
 
         [HttpGet("list/latest")]
-        [ResponseCache(Duration = 600)]
+        [CacheControl(600, 300)]
         [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetLatestManga([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
@@ -85,7 +86,7 @@ namespace AkariApi.Controllers
         }
 
         [HttpGet("{id}")]
-        [ResponseCache(Duration = 3600)]
+        [CacheControl(3600, 600)]
         [ProducesResponseType(typeof(ApiResponse<MangaDetailResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -142,7 +143,7 @@ namespace AkariApi.Controllers
         }
 
         [HttpGet("{id}/{subId}")]
-        [ResponseCache(Duration = 86400)]
+        [CacheControl(86400, 604800)]
         [ProducesResponseType(typeof(ApiResponse<ChapterResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -171,7 +172,7 @@ namespace AkariApi.Controllers
         }
 
         [HttpGet("search")]
-        [ResponseCache(Duration = 300)]
+        [CacheControl(300, 60)]
         [ProducesResponseType(typeof(ApiResponse<List<MangaSearchResponse>>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
