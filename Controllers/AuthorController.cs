@@ -3,6 +3,7 @@ using AkariApi.Models;
 using AkariApi.Services;
 using AkariApi.Attributes;
 using System.ComponentModel.DataAnnotations;
+using AkariApi.Helpers;
 
 namespace AkariApi.Controllers
 {
@@ -33,12 +34,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetAuthorByName(string name, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
-            if (pageSize > 100)
-                pageSize = 100;
-            if (pageSize < 1)
-                pageSize = 20;
-            if (page < 1)
-                page = 1;
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
 
             try
             {
@@ -48,14 +44,15 @@ namespace AkariApi.Controllers
                     .From<MangaDto>()
                     .Filter("authors", Supabase.Postgrest.Constants.Operator.Contains, new List<string> { name })
                     .Count(Supabase.Postgrest.Constants.CountType.Exact);
-                var offset = (page - 1) * pageSize;
+                var offset = (clampedPage - 1) * clampedPageSize;
 
                 var response = await _supabaseService.Client
                     .From<MangaDto>()
                     .Select("*")
                     .Filter("authors", Supabase.Postgrest.Constants.Operator.Contains, new List<string> { name })
                     .Order("updated_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Range(offset, offset + pageSize - 1)
+                    .Offset(offset)
+                    .Limit(clampedPageSize)
                     .Get();
 
                 var mangaList = response.Models.Select(m => new MangaResponse
@@ -79,8 +76,8 @@ namespace AkariApi.Controllers
                 {
                     Items = mangaList,
                     TotalItems = totalCount,
-                    CurrentPage = page,
-                    PageSize = pageSize
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
                 }));
             }
             catch (Exception ex)
