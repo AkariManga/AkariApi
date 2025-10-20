@@ -34,4 +34,8 @@ namespace AkariApi.Models
         public DateTimeOffset MangaUpdatedAt { get; set; }
         public List<BookmarkChapter> Chapters { get; set; } = new List<BookmarkChapter>();
     }
+
+    public class BookmarkListResponse : PaginatedResponse<BookmarkResponse>
+    {
+    }
 }

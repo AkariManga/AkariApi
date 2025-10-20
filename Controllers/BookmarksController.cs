@@ -31,7 +31,7 @@ namespace AkariApi.Controllers
         /// <returns>A list of the user's bookmarks.</returns>
         [HttpGet]
         [AutoRefreshAuthorize]
-        [ProducesResponseType(typeof(ApiResponse<List<BookmarkResponse>>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<BookmarkListResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetBookmarks([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
@@ -41,6 +41,8 @@ namespace AkariApi.Controllers
             {
                 return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Missing or invalid token"));
             }
+
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
 
             try
             {
@@ -52,16 +54,35 @@ namespace AkariApi.Controllers
                     return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Invalid token"));
                 }
 
-                var response = await _supabaseService.Client.Rpc("get_user_bookmarks", new { p_user_id = user.Id, p_page = page, p_limit = pageSize });
+                var userGuid = Guid.Parse(user.Id!);
+
+                var totalCount = await _supabaseService.Client
+                    .From<UserBookmarkDto>()
+                    .Where(b => b.UserId == userGuid)
+                    .Count(Supabase.Postgrest.Constants.CountType.Exact);
+
+                var response = await _supabaseService.Client.Rpc("get_user_bookmarks", new { p_user_id = user.Id, p_page = clampedPage, p_limit = clampedPageSize });
 
                 if (string.IsNullOrEmpty(response.Content))
                 {
-                    return Ok(ApiResponse<List<BookmarkResponse>>.Success(new List<BookmarkResponse>()));
+                    return Ok(ApiResponse<BookmarkListResponse>.Success(new BookmarkListResponse
+                    {
+                        Items = new List<BookmarkResponse>(),
+                        TotalItems = totalCount,
+                        CurrentPage = clampedPage,
+                        PageSize = clampedPageSize
+                    }));
                 }
 
                 var bookmarks = JsonSerializer.Deserialize<List<BookmarkResponse>>(response.Content, _jsonOptions);
 
-                return Ok(ApiResponse<List<BookmarkResponse>>.Success(bookmarks ?? new List<BookmarkResponse>()));
+                return Ok(ApiResponse<BookmarkListResponse>.Success(new BookmarkListResponse
+                {
+                    Items = bookmarks ?? new List<BookmarkResponse>(),
+                    TotalItems = totalCount,
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
+                }));
             }
             catch (Exception ex)
             {
