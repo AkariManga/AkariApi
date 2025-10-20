@@ -165,6 +165,8 @@ namespace AkariApi.Models
         public string? Title { get; set; }
         public float Number { get; set; }
         public short? Pages { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
+        public DateTimeOffset UpdatedAt { get; set; }
     }
 
     public class MangaDetailResponse : MangaResponse
