@@ -139,6 +139,52 @@ namespace AkariApi.Controllers
             }
         }
 
+        [HttpGet("mal/{id}")]
+        [CacheControl(3600, 600)]
+        [ProducesResponseType(typeof(ApiResponse<MangaResponse>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> GetMangaByMalId(int id)
+        {
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var response = await _supabaseService.Client
+                    .From<MangaDto>()
+                    .Where(m => m.MalId == id)
+                    .Select("*")
+                    .Single();
+
+                if (response == null)
+                    return NotFound(ApiResponse<ErrorData>.Error("Manga not found", status: 404));
+
+                var manga = response;
+                var responseObj = new MangaResponse
+                {
+                    Id = manga.Id,
+                    Title = manga.Title,
+                    Cover = manga.Cover,
+                    Description = manga.Description,
+                    Status = manga.Status,
+                    Type = manga.Type,
+                    Authors = manga.Authors,
+                    Genres = manga.Genres,
+                    AlternativeTitles = manga.AlternativeTitles,
+                    MalId = manga.MalId,
+                    AniId = manga.AniId,
+                    CreatedAt = manga.CreatedAt,
+                    UpdatedAt = manga.UpdatedAt,
+                };
+
+                return Ok(ApiResponse<MangaResponse>.Success(responseObj));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve manga", ex.Message));
+            }
+        }
+
         [HttpGet("{id}/{subId}")]
         [CacheControl(86400, 604800)]
         [ProducesResponseType(typeof(ApiResponse<ChapterResponse>), 200)]
