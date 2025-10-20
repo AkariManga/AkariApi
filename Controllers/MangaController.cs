@@ -167,5 +167,40 @@ namespace AkariApi.Controllers
                 return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve chapter", ex.Message));
             }
         }
+
+        [HttpGet("search")]
+        [ProducesResponseType(typeof(ApiResponse<List<MangaSearchResponse>>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> SearchManga([FromQuery] string query, [FromQuery] int limit = 20)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                return BadRequest(ApiResponse<ErrorData>.Error("Search query is required"));
+
+            if (limit > 100)
+                limit = 100;
+            if (limit < 1)
+                limit = 1;
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var response = await _supabaseService.Client.Rpc("search_manga", new { search_text = query, result_limit = limit });
+
+                if (string.IsNullOrEmpty(response.Content))
+                {
+                    return Ok(ApiResponse<List<MangaSearchResponse>>.Success(new List<MangaSearchResponse>()));
+                }
+
+                var searchResults = JsonSerializer.Deserialize<List<MangaSearchResponse>>(response.Content, _jsonOptions);
+
+                return Ok(ApiResponse<List<MangaSearchResponse>>.Success(searchResults ?? new List<MangaSearchResponse>()));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to search manga", ex.Message));
+            }
+        }
     }
 }

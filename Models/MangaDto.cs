@@ -119,4 +119,9 @@ namespace AkariApi.Models
     {
         public List<MangaChapter> Chapters { get; set; } = new List<MangaChapter>();
     }
+
+    public class MangaSearchResponse : MangaResponse
+    {
+        public double Rank { get; set; }
+    }
 }
