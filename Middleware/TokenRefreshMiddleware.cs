@@ -61,6 +61,7 @@ namespace AkariApi.Middleware
                     if (newSession != null && !string.IsNullOrEmpty(newSession.AccessToken) && !string.IsNullOrEmpty(newSession.RefreshToken))
                     {
                         context.Items["RefreshedAccessToken"] = newSession.AccessToken;
+                        context.Items["RefreshedRefreshToken"] = newSession.RefreshToken;
                         context.Response.Cookies.Append("accessToken", newSession.AccessToken, new CookieOptions
                         {
                             HttpOnly = true,
