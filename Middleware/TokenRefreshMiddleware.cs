@@ -3,7 +3,6 @@ using System.IdentityModel.Tokens.Jwt;
 using AkariApi.Helpers;
 using AkariApi.Models;
 using AkariApi.Attributes;
-using Microsoft.Extensions.Logging;
 
 namespace AkariApi.Middleware
 {
@@ -48,18 +47,16 @@ namespace AkariApi.Middleware
                     needsRefresh = true;
                 }
             }
-            else
-            {
-                needsRefresh = !string.IsNullOrEmpty(refreshToken);
-            }
 
-            if (needsRefresh && !string.IsNullOrEmpty(refreshToken))
+            if (needsRefresh && !string.IsNullOrEmpty(refreshToken) && !string.IsNullOrEmpty(token))
             {
                 try
                 {
                     await supabaseService.InitializeAsync();
                     await supabaseService.Client.Auth.SetSession(token, refreshToken);
-                    var newSession = await supabaseService.Client.Auth.RefreshSession();
+                    await supabaseService.Client.Auth.RefreshToken();
+
+                    var newSession = supabaseService.Client.Auth.CurrentSession;
 
                     if (newSession != null && !string.IsNullOrEmpty(newSession.AccessToken) && !string.IsNullOrEmpty(newSession.RefreshToken))
                     {
@@ -78,10 +75,14 @@ namespace AkariApi.Middleware
                             SameSite = SameSiteMode.Strict,
                             Expires = DateTimeOffset.UtcNow.AddDays(365)
                         });
+
+                        _logger.LogInformation("Successfully refreshed token for request {Path}", context.Request.Path);
                     }
                     else
                     {
-                        _logger.LogWarning("Token refresh returned invalid session (null or missing access token) for request {Path}", context.Request.Path);
+                        _logger.LogWarning("Token refresh returned invalid session for request {Path}", context.Request.Path);
+                        context.Response.Cookies.Delete("accessToken");
+                        context.Response.Cookies.Delete("refreshToken");
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         context.Response.ContentType = "application/json";
                         var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Invalid refresh token or session expired", 401);
@@ -92,18 +93,22 @@ namespace AkariApi.Middleware
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Token refresh failed for request {Path}: {Message}", context.Request.Path, ex.Message);
+                    context.Response.Cookies.Delete("accessToken");
+                    context.Response.Cookies.Delete("refreshToken");
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     context.Response.ContentType = "application/json";
-                    var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Token refresh failed due to an internal error", 401);
+                    var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Token refresh failed - please sign in again", 401);
                     await context.Response.WriteAsJsonAsync(errorResponse);
                     return;
                 }
             }
-            else if (needsRefresh && string.IsNullOrEmpty(refreshToken))
+            else if (needsRefresh)
             {
+                context.Response.Cookies.Delete("accessToken");
+                context.Response.Cookies.Delete("refreshToken");
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.ContentType = "application/json";
-                var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Missing refresh token", 401);
+                var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Re-authentication required", 401);
                 await context.Response.WriteAsJsonAsync(errorResponse);
                 return;
             }

@@ -7,11 +7,17 @@ using AkariApi.Filters;
 using System.Text.Json.Serialization;
 using Serilog;
 
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .CreateLogger();
-
 var builder = WebApplication.CreateBuilder(args);
+
+var loggerConfig = new LoggerConfiguration()
+    .WriteTo.Console();
+
+if (builder.Environment.IsDevelopment())
+{
+    loggerConfig.WriteTo.File("logs/log-.txt", rollingInterval: RollingInterval.Day);
+}
+
+Log.Logger = loggerConfig.CreateLogger();
 
 builder.Host.UseSerilog();
 
@@ -68,7 +74,7 @@ if (string.IsNullOrEmpty(key))
 
 var options = new SupabaseOptions
 {
-    AutoRefreshToken = true,
+    AutoRefreshToken = false,
     AutoConnectRealtime = true,
 };
 builder.Services.AddSingleton(provider => new Supabase.Client(url, key, options));
