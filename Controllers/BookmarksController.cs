@@ -36,32 +36,24 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetBookmarks([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
-            var token = AuthenticationHelper.GetAccessToken(Request);
-            if (string.IsNullOrEmpty(token))
-            {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Missing or invalid token"));
-            }
-
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
 
             try
             {
                 await _supabaseService.InitializeAsync();
 
-                var user = await _supabaseService.Client.Auth.GetUser(token);
-                if (user == null)
+                var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Invalid token"));
+                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
                 }
-
-                var userGuid = Guid.Parse(user.Id!);
 
                 var totalCount = await _supabaseService.Client
                     .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userGuid)
+                    .Where(b => b.UserId == userId)
                     .Count(Supabase.Postgrest.Constants.CountType.Exact);
 
-                var response = await _supabaseService.Client.Rpc("get_user_bookmarks", new { p_user_id = user.Id, p_page = clampedPage, p_limit = clampedPageSize });
+                var response = await _supabaseService.Client.Rpc("get_user_bookmarks", new { p_user_id = userId.ToString(), p_page = clampedPage, p_limit = clampedPageSize });
 
                 if (string.IsNullOrEmpty(response.Content))
                 {
@@ -102,27 +94,19 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> UpdateReadChapter(Guid mangaId, [FromBody] UpdateBookmarkRequest request)
         {
-            var token = AuthenticationHelper.GetAccessToken(Request);
-            if (string.IsNullOrEmpty(token))
-            {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Missing or invalid token"));
-            }
-
             try
             {
                 await _supabaseService.InitializeAsync();
 
-                var user = await _supabaseService.Client.Auth.GetUser(token);
-                if (user == null)
+                var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Invalid token"));
+                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
                 }
-
-                var userGuid = Guid.Parse(user.Id!);
 
                 var existingBookmark = await _supabaseService.Client
                     .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userGuid && b.MangaId == mangaId)
+                    .Where(b => b.UserId == userId && b.MangaId == mangaId)
                     .Single();
 
                 if (existingBookmark != null)
@@ -135,7 +119,7 @@ namespace AkariApi.Controllers
                 {
                     var newBookmark = new UserBookmarkDto
                     {
-                        UserId = userGuid,
+                        UserId = userId,
                         MangaId = mangaId,
                         LastReadChapterId = request.ChapterId,
                         UpdatedAt = DateTimeOffset.UtcNow
@@ -162,27 +146,19 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetLastReadChapter(Guid mangaId)
         {
-            var token = AuthenticationHelper.GetAccessToken(Request);
-            if (string.IsNullOrEmpty(token))
-            {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Missing or invalid token"));
-            }
-
             try
             {
                 await _supabaseService.InitializeAsync();
 
-                var user = await _supabaseService.Client.Auth.GetUser(token);
-                if (user == null)
+                var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Invalid token"));
+                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
                 }
-
-                var userGuid = Guid.Parse(user.Id!);
 
                 var bookmark = await _supabaseService.Client
                     .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userGuid && b.MangaId == mangaId)
+                    .Where(b => b.UserId == userId && b.MangaId == mangaId)
                     .Single();
 
                 if (bookmark == null || bookmark.LastReadChapterId == null)
@@ -230,27 +206,19 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> DeleteBookmark(Guid mangaId)
         {
-            var token = AuthenticationHelper.GetAccessToken(Request);
-            if (string.IsNullOrEmpty(token))
-            {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Missing or invalid token"));
-            }
-
             try
             {
                 await _supabaseService.InitializeAsync();
 
-                var user = await _supabaseService.Client.Auth.GetUser(token);
-                if (user == null)
+                var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Invalid token"));
+                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
                 }
-
-                var userGuid = Guid.Parse(user.Id!);
 
                 var bookmark = await _supabaseService.Client
                     .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userGuid && b.MangaId == mangaId)
+                    .Where(b => b.UserId == userId && b.MangaId == mangaId)
                     .Single();
 
                 if (bookmark == null)
@@ -260,7 +228,7 @@ namespace AkariApi.Controllers
 
                 await _supabaseService.Client
                     .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userGuid && b.MangaId == mangaId)
+                    .Where(b => b.UserId == userId && b.MangaId == mangaId)
                     .Delete();
 
                 return Ok(ApiResponse<string>.Success("Bookmark deleted successfully"));
