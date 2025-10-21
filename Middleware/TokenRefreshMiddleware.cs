@@ -9,12 +9,10 @@ namespace AkariApi.Middleware
     public class TokenRefreshMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly ILogger<TokenRefreshMiddleware> _logger;
 
         public TokenRefreshMiddleware(RequestDelegate next, ILogger<TokenRefreshMiddleware> logger)
         {
             _next = next;
-            _logger = logger;
         }
 
         public async Task InvokeAsync(HttpContext context, SupabaseService supabaseService)
@@ -41,9 +39,8 @@ namespace AkariApi.Middleware
                         needsRefresh = true;
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    _logger.LogWarning(ex, "Failed to parse JWT token for request {Path}: {Message}", context.Request.Path, ex.Message);
                     needsRefresh = true;
                 }
             }
@@ -75,12 +72,9 @@ namespace AkariApi.Middleware
                             SameSite = SameSiteMode.Strict,
                             Expires = DateTimeOffset.UtcNow.AddDays(365)
                         });
-
-                        _logger.LogInformation("Successfully refreshed token for request {Path}", context.Request.Path);
                     }
                     else
                     {
-                        _logger.LogWarning("Token refresh returned invalid session for request {Path}", context.Request.Path);
                         context.Response.Cookies.Delete("accessToken");
                         context.Response.Cookies.Delete("refreshToken");
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -90,9 +84,8 @@ namespace AkariApi.Middleware
                         return;
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    _logger.LogError(ex, "Token refresh failed for request {Path}: {Message}", context.Request.Path, ex.Message);
                     context.Response.Cookies.Delete("accessToken");
                     context.Response.Cookies.Delete("refreshToken");
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;

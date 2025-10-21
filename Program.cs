@@ -5,21 +5,8 @@ using Microsoft.AspNetCore.Mvc.Versioning;
 using Microsoft.AspNetCore.Mvc;
 using AkariApi.Filters;
 using System.Text.Json.Serialization;
-using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
-
-var loggerConfig = new LoggerConfiguration()
-    .WriteTo.Console();
-
-if (builder.Environment.IsDevelopment())
-{
-    loggerConfig.WriteTo.File("logs/log-.txt", rollingInterval: RollingInterval.Day);
-}
-
-Log.Logger = loggerConfig.CreateLogger();
-
-builder.Host.UseSerilog();
 
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
