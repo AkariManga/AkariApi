@@ -13,6 +13,7 @@ namespace AkariApi.Models
         public required string Type { get; set; }
         public required string[] Authors { get; set; }
         public required string[] Genres { get; set; }
+        public required int Score { get; set; }
         public int? MalId { get; set; }
         public int? AniId { get; set; }
         public DateTimeOffset CreatedAt { get; set; }

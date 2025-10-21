@@ -64,6 +64,7 @@ namespace AkariApi.Controllers
                     Authors = m.Authors,
                     Genres = m.Genres,
                     Views = m.Views,
+                    Score = m.Score,
                     AlternativeTitles = m.AlternativeTitles,
                     MalId = m.MalId,
                     AniId = m.AniId,
@@ -189,6 +190,7 @@ namespace AkariApi.Controllers
                     Authors = manga.Authors,
                     Genres = manga.Genres,
                     Views = manga.Views,
+                    Score = manga.Score,
                     AlternativeTitles = manga.AlternativeTitles,
                     MalId = manga.MalId,
                     AniId = manga.AniId,
@@ -266,6 +268,47 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Rates a manga by its ID.
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <param name="request">The rating request containing the rating value.</param>
+        /// <returns>A success message.</returns>
+        [HttpPost("{id}/rate")]
+        [RequireTokenRefresh]
+        [CacheControl(0, 0, false)]
+        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> RateManga(Guid id, [FromBody] RateMangaRequest request)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var rating = new MangaRatingDto
+                {
+                    UserId = userId,
+                    MangaId = id,
+                    Rating = request.Rating
+                };
+
+                var response = await _supabaseService.Client.From<MangaRatingDto>().Upsert(rating, new Supabase.Postgrest.QueryOptions { OnConflict = "user_id,manga_id" });
+                return Ok(ApiResponse<string>.Success("Rating submitted successfully"));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to rate manga", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Retrieves detailed information about a manga by its MyAnimeList ID.
         /// </summary>
         /// <param name="id">The MyAnimeList ID of the manga.</param>
@@ -302,6 +345,7 @@ namespace AkariApi.Controllers
                     Authors = manga.Authors,
                     Genres = manga.Genres,
                     Views = manga.Views,
+                    Score = manga.Score,
                     AlternativeTitles = manga.AlternativeTitles,
                     MalId = manga.MalId,
                     AniId = manga.AniId,

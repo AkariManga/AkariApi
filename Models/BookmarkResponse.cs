@@ -27,6 +27,8 @@ namespace AkariApi.Models
         public MangaType Type { get; set; }
         public string[] Authors { get; set; } = Array.Empty<string>();
         public string[] Genres { get; set; } = Array.Empty<string>();
+        public int Views { get; set; } = 0;
+        public decimal Score { get; set; } = 0;
         public int? MalId { get; set; }
         public int? AniId { get; set; }
         public string[]? AlternativeTitles { get; set; }
