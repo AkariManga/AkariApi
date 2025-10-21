@@ -86,6 +86,72 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Retrieves popular manga based on recent views.
+        /// </summary>
+        /// <param name="days">The number of days to look back for views.</param>
+        /// <param name="limit">The maximum number of results.</param>
+        /// <param name="offset">The offset for pagination.</param>
+        /// <returns>A list of popular manga.</returns>
+        [HttpGet("list/popular")]
+        [CacheControl(600, 300)]
+        [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> GetPopularManga([FromQuery, Range(1, 365)] int days = 30, [FromQuery, Range(1, 100)] int limit = 20, [FromQuery, Range(0, int.MaxValue)] int offset = 0)
+        {
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var response = await _supabaseService.Client.Rpc("get_manga_views_recent", new { p_days = days, p_limit = limit, p_offset = offset });
+
+                if (string.IsNullOrEmpty(response.Content))
+                {
+                    return Ok(ApiResponse<MangaListResponse>.Success(new MangaListResponse
+                    {
+                        Items = new List<MangaResponse>(),
+                        TotalItems = 0,
+                        CurrentPage = (offset / limit) + 1,
+                        PageSize = limit
+                    }));
+                }
+
+                var popularManga = JsonSerializer.Deserialize<List<PopularMangaResponse>>(response.Content, _jsonOptions);
+
+                var mangaList = (popularManga ?? new List<PopularMangaResponse>()).Select(p => new MangaResponse
+                {
+                    Id = p.Id,
+                    Title = p.Title,
+                    Cover = p.Cover,
+                    Description = p.Description,
+                    Status = p.Status,
+                    Type = Enum.Parse<MangaType>(p.Type),
+                    Authors = p.Authors,
+                    Genres = p.Genres,
+                    Views = (int)p.ViewCount,
+                    AlternativeTitles = p.AlternativeTitles,
+                    MalId = p.MalId,
+                    AniId = p.AniId,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
+                }).ToList();
+
+                var totalCount = popularManga?.FirstOrDefault()?.TotalCount ?? 0;
+
+                return Ok(ApiResponse<MangaListResponse>.Success(new MangaListResponse
+                {
+                    Items = mangaList,
+                    TotalItems = (int)totalCount,
+                    CurrentPage = (offset / limit) + 1,
+                    PageSize = limit
+                }));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve popular manga", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Retrieves detailed information about a manga by its ID, including chapters.
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
