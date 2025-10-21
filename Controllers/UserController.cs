@@ -53,10 +53,10 @@ namespace AkariApi.Controllers
 
                 if (!string.IsNullOrEmpty(session.AccessToken))
                 {
-                    Response.Cookies.Append("accessToken", session.AccessToken, new CookieOptions { HttpOnly = true, Secure = true });
+                    Response.Cookies.Append("accessToken", session.AccessToken, new CookieOptions { HttpOnly = true, Secure = true, Expires = DateTimeOffset.UtcNow.AddSeconds(session.ExpiresIn) });
                     if (!string.IsNullOrEmpty(session.RefreshToken))
                     {
-                        Response.Cookies.Append("refreshToken", session.RefreshToken, new CookieOptions { HttpOnly = true, Secure = true });
+                        Response.Cookies.Append("refreshToken", session.RefreshToken, new CookieOptions { HttpOnly = true, Secure = true, Expires = DateTimeOffset.UtcNow.AddDays(365) });
                     }
                 }
 
@@ -97,10 +97,10 @@ namespace AkariApi.Controllers
 
                 if (!string.IsNullOrEmpty(session.AccessToken))
                 {
-                    Response.Cookies.Append("accessToken", session.AccessToken, new CookieOptions { HttpOnly = true, Secure = true });
+                    Response.Cookies.Append("accessToken", session.AccessToken, new CookieOptions { HttpOnly = true, Secure = true, Expires = DateTimeOffset.UtcNow.AddSeconds(session.ExpiresIn) });
                     if (!string.IsNullOrEmpty(session.RefreshToken))
                     {
-                        Response.Cookies.Append("refreshToken", session.RefreshToken, new CookieOptions { HttpOnly = true, Secure = true });
+                        Response.Cookies.Append("refreshToken", session.RefreshToken, new CookieOptions { HttpOnly = true, Secure = true, Expires = DateTimeOffset.UtcNow.AddDays(365) });
                     }
                 }
 
