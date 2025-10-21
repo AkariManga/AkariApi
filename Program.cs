@@ -82,6 +82,8 @@ app.UseHttpsRedirection();
 
 app.UseRateLimiter();
 
+app.UseMiddleware<AkariApi.Middleware.TokenRefreshMiddleware>();
+
 app.UseAuthorization();
 
 app.MapControllers().RequireRateLimiting("fixed");

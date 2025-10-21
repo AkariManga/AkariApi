@@ -1,11 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using AkariApi.Models;
 using AkariApi.Services;
-using AkariApi.Attributes;
-using System.Text.Json;
-using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
 using Supabase.Gotrue;
+using AkariApi.Attributes;
 
 namespace AkariApi.Controllers
 {
@@ -56,7 +54,6 @@ namespace AkariApi.Controllers
                 if (!string.IsNullOrEmpty(session.AccessToken))
                 {
                     Response.Cookies.Append("accessToken", session.AccessToken, new CookieOptions { HttpOnly = true, Secure = true });
-                    Response.Cookies.Append("expiresIn", session.ExpiresIn.ToString(), new CookieOptions { HttpOnly = true, Secure = true });
                     if (!string.IsNullOrEmpty(session.RefreshToken))
                     {
                         Response.Cookies.Append("refreshToken", session.RefreshToken, new CookieOptions { HttpOnly = true, Secure = true });
@@ -101,7 +98,6 @@ namespace AkariApi.Controllers
                 if (!string.IsNullOrEmpty(session.AccessToken))
                 {
                     Response.Cookies.Append("accessToken", session.AccessToken, new CookieOptions { HttpOnly = true, Secure = true });
-                    Response.Cookies.Append("expiresIn", session.ExpiresIn.ToString(), new CookieOptions { HttpOnly = true, Secure = true });
                     if (!string.IsNullOrEmpty(session.RefreshToken))
                     {
                         Response.Cookies.Append("refreshToken", session.RefreshToken, new CookieOptions { HttpOnly = true, Secure = true });
@@ -133,7 +129,6 @@ namespace AkariApi.Controllers
 
                 // Reset authentication headers
                 Response.Cookies.Delete("accessToken");
-                Response.Cookies.Delete("expiresIn");
                 Response.Cookies.Delete("refreshToken");
 
                 return Ok(ApiResponse<string>.Success("Signed out successfully"));
@@ -149,10 +144,10 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <returns>The user information.</returns>
         [HttpGet("me")]
-        [AutoRefreshAuthorize]
         [ProducesResponseType(typeof(ApiResponse<User>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [RequireTokenRefresh]
         public async Task<IActionResult> GetMe()
         {
             var token = AuthenticationHelper.GetAccessToken(Request);

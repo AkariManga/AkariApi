@@ -13,6 +13,7 @@ namespace AkariApi.Controllers
     [Route("v2/bookmarks")]
     [ApiVersion("2.0")]
     [Produces("application/json")]
+    [RequireTokenRefresh]
     public class BookmarksController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;
@@ -30,7 +31,6 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A list of the user's bookmarks.</returns>
         [HttpGet]
-        [AutoRefreshAuthorize]
         [ProducesResponseType(typeof(ApiResponse<BookmarkListResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -97,7 +97,6 @@ namespace AkariApi.Controllers
         /// <param name="request">The update request containing chapter ID.</param>
         /// <returns>Success message.</returns>
         [HttpPut("{mangaId}")]
-        [AutoRefreshAuthorize]
         [ProducesResponseType(typeof(ApiResponse<string>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -158,7 +157,6 @@ namespace AkariApi.Controllers
         /// <param name="mangaId">The manga ID.</param>
         /// <returns>The last read chapter details.</returns>
         [HttpGet("{mangaId}")]
-        [AutoRefreshAuthorize]
         [ProducesResponseType(typeof(ApiResponse<LastReadResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -226,7 +224,6 @@ namespace AkariApi.Controllers
         /// <param name="mangaId">The manga ID.</param>
         /// <returns>Success message.</returns>
         [HttpDelete("{mangaId}")]
-        [AutoRefreshAuthorize]
         [ProducesResponseType(typeof(ApiResponse<string>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
