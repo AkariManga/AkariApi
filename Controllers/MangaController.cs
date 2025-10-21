@@ -201,7 +201,9 @@ namespace AkariApi.Controllers
                         Id = c.Id,
                         Title = c.Title,
                         Number = c.Number,
-                        Pages = c.Pages
+                        Pages = c.Pages,
+                        UpdatedAt = c.UpdatedAt,
+                        CreatedAt = c.CreatedAt,
                     }).ToList()
                 };
 
@@ -309,13 +311,13 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves detailed information about a manga by its MyAnimeList ID.
+        /// Retrieves detailed information about a manga by its MyAnimeList ID, including chapters.
         /// </summary>
         /// <param name="id">The MyAnimeList ID of the manga.</param>
         /// <returns>Detailed manga information.</returns>
         [HttpGet("mal/{id}")]
         [CacheControl(3600, 600)]
-        [ProducesResponseType(typeof(ApiResponse<MangaResponse>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<MangaDetailResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetMangaByMalId(int id)
@@ -325,16 +327,17 @@ namespace AkariApi.Controllers
                 await _supabaseService.InitializeAsync();
 
                 var response = await _supabaseService.Client
-                    .From<MangaDto>()
+                    .From<MangaWithChaptersDto>()
                     .Where(m => m.MalId == id)
-                    .Select("*")
+                    .Select("*, chapters(*)")
                     .Single();
 
                 if (response == null)
                     return NotFound(ApiResponse<ErrorData>.Error("Manga not found", status: 404));
 
                 var manga = response;
-                var responseObj = new MangaResponse
+                var sortedChapters = manga.Chapters?.OrderBy(c => c.Number).ToList() ?? new List<ChapterDto>();
+                var responseObj = new MangaDetailResponse
                 {
                     Id = manga.Id,
                     Title = manga.Title,
@@ -351,9 +354,18 @@ namespace AkariApi.Controllers
                     AniId = manga.AniId,
                     CreatedAt = manga.CreatedAt,
                     UpdatedAt = manga.UpdatedAt,
+                    Chapters = sortedChapters.Select(c => new MangaChapter
+                    {
+                        Id = c.Id,
+                        Title = c.Title,
+                        Number = c.Number,
+                        Pages = c.Pages,
+                        UpdatedAt = c.UpdatedAt,
+                        CreatedAt = c.CreatedAt,
+                    }).ToList()
                 };
 
-                return Ok(ApiResponse<MangaResponse>.Success(responseObj));
+                return Ok(ApiResponse<MangaDetailResponse>.Success(responseObj));
             }
             catch (Exception ex)
             {
