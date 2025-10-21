@@ -144,6 +144,7 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <returns>The user information.</returns>
         [HttpGet("me")]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
         [ProducesResponseType(typeof(ApiResponse<User>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]

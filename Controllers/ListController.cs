@@ -30,6 +30,7 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A paginated list of the user's manga lists.</returns>
         [HttpGet("user/{userId}")]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
         [ProducesResponseType(typeof(ApiResponse<UserMangaListPaginatedResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetUserLists(Guid userId, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
@@ -87,6 +88,7 @@ namespace AkariApi.Controllers
         /// <param name="id">The list ID.</param>
         /// <returns>The manga list with all its entries.</returns>
         [HttpGet("{id}")]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
         [ProducesResponseType(typeof(ApiResponse<UserMangaListWithEntriesResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -154,6 +156,7 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A paginated list of the user's manga lists.</returns>
         [HttpGet("me")]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
         [ProducesResponseType(typeof(ApiResponse<UserMangaListPaginatedResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]

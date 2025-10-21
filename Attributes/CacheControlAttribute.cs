@@ -2,16 +2,31 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace AkariApi.Attributes
 {
+    public enum CacheDuration
+    {
+        NoCache = 0,
+        ThirtySeconds = 30,
+        OneMinute = 60,
+        FiveMinutes = 300,
+        TenMinutes = 600,
+        ThirtyMinutes = 1800,
+        OneHour = 3600,
+        SixHours = 21600,
+        TwelveHours = 43200,
+        OneDay = 86400,
+        SevenDays = 604800
+    }
+
     public class CacheControlAttribute : ActionFilterAttribute
     {
         private readonly int _maxAge;
         private readonly int _staleWhileRevalidate;
         private readonly bool _isPublic;
 
-        public CacheControlAttribute(int maxAge, int staleWhileRevalidate = 0, bool isPublic = true)
+        public CacheControlAttribute(CacheDuration maxAge, CacheDuration staleWhileRevalidate = CacheDuration.NoCache, bool isPublic = true)
         {
-            _maxAge = maxAge;
-            _staleWhileRevalidate = staleWhileRevalidate;
+            _maxAge = (int)maxAge;
+            _staleWhileRevalidate = (int)staleWhileRevalidate;
             _isPublic = isPublic;
         }
 

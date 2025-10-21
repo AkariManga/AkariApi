@@ -29,7 +29,7 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A list of the latest manga.</returns>
         [HttpGet("list/latest")]
-        [CacheControl(600, 300)]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes)]
         [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetLatestManga([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
@@ -94,7 +94,7 @@ namespace AkariApi.Controllers
         /// <param name="offset">The offset for pagination.</param>
         /// <returns>A list of popular manga.</returns>
         [HttpGet("list/popular")]
-        [CacheControl(600, 300)]
+        [CacheControl(CacheDuration.OneHour, CacheDuration.TwelveHours)]
         [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetPopularManga([FromQuery, Range(1, 365)] int days = 30, [FromQuery, Range(1, 100)] int limit = 20, [FromQuery, Range(0, int.MaxValue)] int offset = 0)
@@ -158,7 +158,7 @@ namespace AkariApi.Controllers
         /// <param name="id">The unique identifier of the manga.</param>
         /// <returns>Detailed manga information.</returns>
         [HttpGet("{id}")]
-        [CacheControl(3600, 600)]
+        [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
         [ProducesResponseType(typeof(ApiResponse<MangaDetailResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -220,7 +220,6 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
         [HttpPost("{id}/view")]
-        [CacheControl(0, 0, false)]
         [ProducesResponseType(typeof(ApiResponse<string>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -277,7 +276,6 @@ namespace AkariApi.Controllers
         /// <returns>A success message.</returns>
         [HttpPost("{id}/rate")]
         [RequireTokenRefresh]
-        [CacheControl(0, 0, false)]
         [ProducesResponseType(typeof(ApiResponse<string>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
@@ -316,7 +314,7 @@ namespace AkariApi.Controllers
         /// <param name="id">The MyAnimeList ID of the manga.</param>
         /// <returns>Detailed manga information.</returns>
         [HttpGet("mal/{id}")]
-        [CacheControl(3600, 600)]
+        [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
         [ProducesResponseType(typeof(ApiResponse<MangaDetailResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -380,7 +378,7 @@ namespace AkariApi.Controllers
         /// <param name="subId">The chapter number.</param>
         /// <returns>The chapter details.</returns>
         [HttpGet("{id}/{subId}")]
-        [CacheControl(86400, 604800)]
+        [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
         [ProducesResponseType(typeof(ApiResponse<ChapterResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -415,7 +413,7 @@ namespace AkariApi.Controllers
         /// <param name="limit">The maximum number of results.</param>
         /// <returns>A list of matching manga.</returns>
         [HttpGet("search")]
-        [CacheControl(300, 60)]
+        [CacheControl(CacheDuration.OneHour, CacheDuration.SixHours)]
         [ProducesResponseType(typeof(ApiResponse<List<MangaSearchResponse>>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]

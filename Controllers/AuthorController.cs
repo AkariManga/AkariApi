@@ -28,7 +28,7 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A paginated list of manga.</returns>
         [HttpGet("{name}")]
-        [CacheControl(3600, 600)]
+        [CacheControl(CacheDuration.OneHour, CacheDuration.TwelveHours)]
         [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
