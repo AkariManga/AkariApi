@@ -103,7 +103,7 @@ namespace AkariApi.Controllers
             {
                 await _supabaseService.InitializeAsync();
 
-                var response = await _supabaseService.Client.Rpc("get_manga_views_recent", new { p_days = days, p_limit = limit, p_offset = offset });
+                var response = await _supabaseService.AdminClient.Rpc("get_manga_views_recent", new { p_days = days, p_limit = limit, p_offset = offset });
 
                 if (string.IsNullOrEmpty(response.Content))
                 {
