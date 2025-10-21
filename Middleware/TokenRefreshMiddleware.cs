@@ -18,7 +18,10 @@ namespace AkariApi.Middleware
         public async Task InvokeAsync(HttpContext context, SupabaseService supabaseService)
         {
             var endpoint = context.GetEndpoint();
-            if (endpoint?.Metadata.GetMetadata<RequireTokenRefreshAttribute>() == null)
+            var requireRefresh = endpoint?.Metadata.GetMetadata<RequireTokenRefreshAttribute>() != null;
+            var optionalRefresh = endpoint?.Metadata.GetMetadata<OptionalTokenRefreshAttribute>() != null;
+
+            if (!requireRefresh && !optionalRefresh)
             {
                 await _next(context);
                 return;
@@ -75,27 +78,33 @@ namespace AkariApi.Middleware
                     }
                     else
                     {
-                        context.Response.Cookies.Delete("accessToken");
-                        context.Response.Cookies.Delete("refreshToken");
-                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                        context.Response.ContentType = "application/json";
-                        var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Invalid refresh token or session expired", 401);
-                        await context.Response.WriteAsJsonAsync(errorResponse);
-                        return;
+                        if (requireRefresh)
+                        {
+                            context.Response.Cookies.Delete("accessToken");
+                            context.Response.Cookies.Delete("refreshToken");
+                            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                            context.Response.ContentType = "application/json";
+                            var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Invalid refresh token or session expired", 401);
+                            await context.Response.WriteAsJsonAsync(errorResponse);
+                            return;
+                        }
                     }
                 }
                 catch
                 {
-                    context.Response.Cookies.Delete("accessToken");
-                    context.Response.Cookies.Delete("refreshToken");
-                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                    context.Response.ContentType = "application/json";
-                    var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Token refresh failed - please sign in again", 401);
-                    await context.Response.WriteAsJsonAsync(errorResponse);
-                    return;
+                    if (requireRefresh)
+                    {
+                        context.Response.Cookies.Delete("accessToken");
+                        context.Response.Cookies.Delete("refreshToken");
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        context.Response.ContentType = "application/json";
+                        var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Token refresh failed - please sign in again", 401);
+                        await context.Response.WriteAsJsonAsync(errorResponse);
+                        return;
+                    }
                 }
             }
-            else if (needsRefresh)
+            else if (needsRefresh && requireRefresh)
             {
                 context.Response.Cookies.Delete("accessToken");
                 context.Response.Cookies.Delete("refreshToken");
