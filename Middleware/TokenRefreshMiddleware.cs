@@ -67,7 +67,7 @@ namespace AkariApi.Middleware
                             HttpOnly = true,
                             Secure = true,
                             SameSite = SameSiteMode.Strict,
-                            Expires = DateTimeOffset.UtcNow.AddSeconds(newSession.ExpiresIn)
+                            Expires = DateTimeOffset.UtcNow.AddDays(365)
                         });
                         context.Response.Cookies.Append("refreshToken", newSession.RefreshToken, new CookieOptions
                         {
