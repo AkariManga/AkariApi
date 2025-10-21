@@ -245,7 +245,7 @@ namespace AkariApi.Controllers
             {
                 await _supabaseService.InitializeAsync();
 
-                var rpcResponse = await _supabaseService.Client.Rpc("increment_manga_view", new { p_manga_id = id, p_ip = clientIp });
+                var rpcResponse = await _supabaseService.AdminClient.Rpc("increment_manga_view", new { p_manga_id = id, p_ip = clientIp });
                 if (rpcResponse.Content == "\"count_incremented\"")
                 {
                     return Ok(ApiResponse<string>.Success("Views updated successfully"));

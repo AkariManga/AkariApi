@@ -47,16 +47,21 @@ builder.Services.AddRateLimiter(_ => _
         options.QueueLimit = 2;
     }));
 
-var url = builder.Configuration["SUPABASE_URL"] ?? Environment.GetEnvironmentVariable("SUPABASE_URL");
-var key = builder.Configuration["SUPABASE_KEY"] ?? Environment.GetEnvironmentVariable("SUPABASE_KEY");
+var supabaseUrl = builder.Configuration["SUPABASE_URL"] ?? Environment.GetEnvironmentVariable("SUPABASE_URL");
+var anonKey = builder.Configuration["SUPABASE_ANON_KEY"] ?? Environment.GetEnvironmentVariable("SUPABASE_ANON_KEY");
+var serviceRoleKey = builder.Configuration["SUPABASE_SERVICE_ROLE_KEY"] ?? Environment.GetEnvironmentVariable("SUPABASE_SERVICE_ROLE_KEY");
 
-if (string.IsNullOrEmpty(url))
+if (string.IsNullOrEmpty(supabaseUrl))
 {
     throw new InvalidOperationException("SUPABASE_URL environment variable is not set.");
 }
-if (string.IsNullOrEmpty(key))
+if (string.IsNullOrEmpty(anonKey))
 {
-    throw new InvalidOperationException("SUPABASE_KEY environment variable is not set.");
+    throw new InvalidOperationException("SUPABASE_ANON_KEY environment variable is not set.");
+}
+if (string.IsNullOrEmpty(serviceRoleKey))
+{
+    throw new InvalidOperationException("SUPABASE_SERVICE_ROLE_KEY environment variable is not set.");
 }
 
 var options = new SupabaseOptions
@@ -64,7 +69,12 @@ var options = new SupabaseOptions
     AutoRefreshToken = false,
     AutoConnectRealtime = true,
 };
-builder.Services.AddSingleton(provider => new Supabase.Client(url, key, options));
+var anonClient = new Supabase.Client(supabaseUrl, anonKey, options);
+builder.Services.AddSingleton(anonClient);
+
+var adminClient = new Supabase.Client(supabaseUrl, serviceRoleKey, options);
+builder.Services.AddSingleton(adminClient);
+
 builder.Services.AddScoped<AkariApi.Services.SupabaseService>();
 
 var app = builder.Build();
