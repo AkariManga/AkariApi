@@ -65,6 +65,7 @@ namespace AkariApi.Controllers
                     Type = m.Type,
                     Authors = m.Authors,
                     Genres = m.Genres,
+                    Views = m.Views,
                     AlternativeTitles = m.AlternativeTitles,
                     MalId = m.MalId,
                     AniId = m.AniId,

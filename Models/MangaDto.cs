@@ -47,6 +47,9 @@ namespace AkariApi.Models
         [Column("genres")]
         public string[] Genres { get; set; } = Array.Empty<string>();
 
+        [Column("view_count")]
+        public int Views { get; set; }
+
         [Column("mal_id")]
         public int? MalId { get; set; }
 
@@ -97,6 +100,9 @@ namespace AkariApi.Models
         [Column("genres")]
         public string[] Genres { get; set; } = Array.Empty<string>();
 
+        [Column("view_count")]
+        public int Views { get; set; }
+
         [Column("mal_id")]
         public int? MalId { get; set; }
 
@@ -141,6 +147,9 @@ namespace AkariApi.Models
 
         [Required]
         public string[] Genres { get; set; } = Array.Empty<string>();
+
+        [Required]
+        public int Views { get; set; } = 0;
 
         public string[]? AlternativeTitles { get; set; }
 

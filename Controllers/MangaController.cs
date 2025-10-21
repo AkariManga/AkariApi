@@ -63,6 +63,7 @@ namespace AkariApi.Controllers
                     Type = m.Type,
                     Authors = m.Authors,
                     Genres = m.Genres,
+                    Views = m.Views,
                     AlternativeTitles = m.AlternativeTitles,
                     MalId = m.MalId,
                     AniId = m.AniId,
@@ -121,6 +122,7 @@ namespace AkariApi.Controllers
                     Type = manga.Type,
                     Authors = manga.Authors,
                     Genres = manga.Genres,
+                    Views = manga.Views,
                     AlternativeTitles = manga.AlternativeTitles,
                     MalId = manga.MalId,
                     AniId = manga.AniId,
@@ -140,6 +142,54 @@ namespace AkariApi.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve manga", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Updates the views of a manga by its ID.
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        [HttpPost("{id}/view")]
+        [CacheControl(3600, 600)]
+        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> ViewManga(Guid id)
+        {
+            var clientIp = HttpContext.Request.Headers["CF-Connecting-IP"].FirstOrDefault();
+            if (string.IsNullOrEmpty(clientIp) || clientIp == "::1" || clientIp == "127.0.0.1")
+            {
+                clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+                if (string.IsNullOrEmpty(clientIp))
+                {
+                    clientIp = HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',').FirstOrDefault()?.Trim();
+                    if (string.IsNullOrEmpty(clientIp))
+                    {
+                        clientIp = HttpContext.Request.Headers["X-Real-IP"].FirstOrDefault();
+                    }
+                }
+            }
+
+            if (string.IsNullOrEmpty(clientIp))
+            {
+                return BadRequest(ApiResponse<ErrorData>.Error("Unable to determine client IP address"));
+            }
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var rpcResponse = await _supabaseService.Client.Rpc("increment_manga_view", new { p_manga_id = id, p_ip = clientIp });
+                if (string.IsNullOrEmpty(rpcResponse.Content))
+                {
+                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to increment views"));
+                }
+
+                return Ok(ApiResponse<string>.Success("Views updated successfully"));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to update views", ex.Message));
             }
         }
 
@@ -179,6 +229,7 @@ namespace AkariApi.Controllers
                     Type = manga.Type,
                     Authors = manga.Authors,
                     Genres = manga.Genres,
+                    Views = manga.Views,
                     AlternativeTitles = manga.AlternativeTitles,
                     MalId = manga.MalId,
                     AniId = manga.AniId,
