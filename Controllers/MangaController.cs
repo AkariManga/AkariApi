@@ -150,7 +150,7 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
         [HttpPost("{id}/view")]
-        [CacheControl(3600, 600)]
+        [CacheControl(0, 0, false)]
         [ProducesResponseType(typeof(ApiResponse<string>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
@@ -180,12 +180,18 @@ namespace AkariApi.Controllers
                 await _supabaseService.InitializeAsync();
 
                 var rpcResponse = await _supabaseService.Client.Rpc("increment_manga_view", new { p_manga_id = id, p_ip = clientIp });
-                if (string.IsNullOrEmpty(rpcResponse.Content))
+                if (rpcResponse.Content == "\"count_incremented\"")
                 {
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to increment views"));
+                    return Ok(ApiResponse<string>.Success("Views updated successfully"));
                 }
-
-                return Ok(ApiResponse<string>.Success("Views updated successfully"));
+                else if (rpcResponse.Content == "\"ignored_recent_view\"")
+                {
+                    return Ok(ApiResponse<string>.Success("View recorded (recent view ignored)"));
+                }
+                else
+                {
+                    return StatusCode(500, ApiResponse<ErrorData>.Error("Unexpected response from RPC"));
+                }
             }
             catch (Exception ex)
             {
