@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
 using Supabase.Postgrest;
+using System.Linq;
 
 namespace AkariApi.Controllers
 {
@@ -236,6 +237,56 @@ namespace AkariApi.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to delete bookmark", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Batch updates bookmarks for multiple manga.
+        /// </summary>
+        /// <param name="request">The batch update request.</param>
+        /// <returns>Success message.</returns>
+        [HttpPost("batch")]
+        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> BatchUpdateBookmarks([FromBody] BatchUpdateBookmarksRequest request)
+        {
+            const int maxBatchSize = 100;
+            if (request.Items == null || request.Items.Count == 0)
+            {
+                return BadRequest(ApiResponse<ErrorData>.Error("Bad Request", "No items provided"));
+            }
+            if (request.Items.Count > maxBatchSize)
+            {
+                return BadRequest(ApiResponse<ErrorData>.Error("Bad Request", $"Batch size exceeds maximum of {maxBatchSize}"));
+            }
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                }
+
+                var bookmarksToUpsert = request.Items.Select(item => new UserBookmarkDto
+                {
+                    UserId = userId,
+                    MangaId = item.MangaId,
+                    LastReadChapterId = item.ChapterId,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                }).ToList();
+
+                await _supabaseService.Client.From<UserBookmarkDto>().Upsert(bookmarksToUpsert, new Supabase.Postgrest.QueryOptions { OnConflict = "user_id,manga_id" });
+
+                return Ok(ApiResponse<string>.Success("Bookmarks updated successfully"));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to batch update bookmarks", ex.Message));
             }
         }
     }
