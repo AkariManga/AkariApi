@@ -1,11 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using AkariApi.Models;
 using AkariApi.Services;
-using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
 using AkariApi.Attributes;
-using Supabase.Gotrue;
 using Supabase.Postgrest.Exceptions;
 
 namespace AkariApi.Controllers
