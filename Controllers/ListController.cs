@@ -12,7 +12,6 @@ namespace AkariApi.Controllers
     [Route("v2/lists")]
     [ApiVersion("2.0")]
     [Produces("application/json")]
-    [OptionalTokenRefresh]
     public class ListController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;
@@ -33,6 +32,7 @@ namespace AkariApi.Controllers
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
         [ProducesResponseType(typeof(ApiResponse<UserMangaListPaginatedResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [OptionalTokenRefresh]
         public async Task<IActionResult> GetUserLists(Guid userId, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
@@ -92,6 +92,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<UserMangaListWithEntriesResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [OptionalTokenRefresh]
         public async Task<IActionResult> GetListWithEntries(Guid id)
         {
             try
@@ -160,6 +161,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<UserMangaListPaginatedResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [RequireTokenRefresh]
         public async Task<IActionResult> GetMyLists([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
@@ -225,6 +227,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [RequireTokenRefresh]
         public async Task<IActionResult> CreateList([FromBody] CreateUserMangaListRequest request)
         {
             if (!ModelState.IsValid)
@@ -289,6 +292,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [RequireTokenRefresh]
         public async Task<IActionResult> AddEntryToList(Guid id, [FromBody] CreateUserMangaListEntryRequest request)
         {
             if (!ModelState.IsValid)
@@ -406,6 +410,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [RequireTokenRefresh]
         public async Task<IActionResult> RemoveEntryFromList(Guid id, Guid entryId)
         {
             try
@@ -457,7 +462,7 @@ namespace AkariApi.Controllers
         /// <summary>
         /// Update entry order
         /// </summary>
-        /// <param name="listId">The list ID.</param>
+        /// <param name="id">The list ID.</param>
         /// <param name="entryId">The entry ID.</param>
         /// <param name="request">The update request with the new order index.</param>
         /// <returns>The updated entry.</returns>
@@ -467,6 +472,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [RequireTokenRefresh]
         public async Task<IActionResult> UpdateEntryOrder(Guid id, Guid entryId, [FromBody] UpdateUserMangaListEntryRequest request)
         {
             if (!ModelState.IsValid)
