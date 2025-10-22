@@ -86,6 +86,23 @@ builder.Services.AddSingleton(adminClient);
 
 builder.Services.AddScoped<AkariApi.Services.SupabaseService>();
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAkari", builder =>
+    {
+        builder.SetIsOriginAllowed(origin =>
+        {
+            if (string.IsNullOrEmpty(origin)) return false;
+            var uri = new Uri(origin);
+            var host = uri.Host;
+            return host == "akarimanga.dpdns.org" || host.EndsWith(".akarimanga.dpdns.org");
+        })
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+        .AllowCredentials();
+    });
+});
+
 var app = builder.Build();
 
 app.UseSwagger();
@@ -98,6 +115,8 @@ if (builder.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors("AllowAkari");
 
 app.UseRateLimiter();
 
