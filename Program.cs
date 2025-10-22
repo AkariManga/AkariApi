@@ -104,7 +104,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-app.UseSwagger();
+app.UseSwagger(options =>
+{
+    options.PreSerializeFilters.Add((swaggerDoc, httpReq) =>
+    {
+        httpReq.HttpContext.Response.Headers["Cache-Control"] = "no-cache";
+    });
+});
 if (builder.Environment.IsDevelopment())
 {
     app.UseSwaggerUI(options =>
