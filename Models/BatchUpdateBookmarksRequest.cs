@@ -14,6 +14,6 @@ namespace AkariApi.Models
         public Guid MangaId { get; set; }
 
         [Required]
-        public Guid ChapterId { get; set; }
+        public double ChapterNumber { get; set; }
     }
 }

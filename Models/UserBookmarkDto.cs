@@ -29,7 +29,7 @@ namespace AkariApi.Models
 
     public class UpdateBookmarkRequest
     {
-        public Guid ChapterId { get; set; }
+        public double ChapterNumber { get; set; }
     }
 
     public class LastReadResponse

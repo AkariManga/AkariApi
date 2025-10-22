@@ -88,10 +88,11 @@ namespace AkariApi.Controllers
         /// Updates the last read chapter for a manga in the user's bookmarks.
         /// </summary>
         /// <param name="mangaId">The manga ID.</param>
-        /// <param name="request">The update request containing chapter ID.</param>
+        /// <param name="request">The update request containing chapter number.</param>
         /// <returns>Success message.</returns>
         [HttpPut("{mangaId}")]
         [ProducesResponseType(typeof(ApiResponse<string>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> UpdateReadChapter(Guid mangaId, [FromBody] UpdateBookmarkRequest request)
@@ -106,33 +107,20 @@ namespace AkariApi.Controllers
                     return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
                 }
 
-                var existingBookmark = await _supabaseService.Client
-                    .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userId && b.MangaId == mangaId)
-                    .Single();
-
-                if (existingBookmark != null)
-                {
-                    existingBookmark.LastReadChapterId = request.ChapterId;
-                    existingBookmark.UpdatedAt = DateTimeOffset.UtcNow;
-                    await _supabaseService.Client.From<UserBookmarkDto>().Update(existingBookmark);
-                }
-                else
-                {
-                    var newBookmark = new UserBookmarkDto
-                    {
-                        UserId = userId,
-                        MangaId = mangaId,
-                        LastReadChapterId = request.ChapterId,
-                        UpdatedAt = DateTimeOffset.UtcNow
-                    };
-                    await _supabaseService.Client.From<UserBookmarkDto>().Insert(newBookmark);
-                }
+                await _supabaseService.Client.Rpc("batch_update_user_bookmarks", new {
+                    p_user_id = userId,
+                    p_manga_ids = new Guid[] { mangaId },
+                    p_chapter_numbers = new double[] { request.ChapterNumber }
+                });
 
                 return Ok(ApiResponse<string>.Success("Bookmark updated successfully"));
             }
             catch (Exception ex)
             {
+                if (ex.Message.Contains("Chapter not found"))
+                {
+                    return BadRequest(ApiResponse<ErrorData>.Error("Bad Request", ex.Message));
+                }
                 return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to update bookmark", ex.Message));
             }
         }
@@ -274,20 +262,20 @@ namespace AkariApi.Controllers
                     return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
                 }
 
-                var bookmarksToUpsert = request.Items.Select(item => new UserBookmarkDto
-                {
-                    UserId = userId,
-                    MangaId = item.MangaId,
-                    LastReadChapterId = item.ChapterId,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                }).ToList();
-
-                await _supabaseService.Client.From<UserBookmarkDto>().Upsert(bookmarksToUpsert, new Supabase.Postgrest.QueryOptions { OnConflict = "user_id,manga_id" });
+                await _supabaseService.Client.Rpc("batch_update_user_bookmarks", new {
+                    p_user_id = userId,
+                    p_manga_ids = request.Items.Select(i => i.MangaId).ToArray(),
+                    p_chapter_numbers = request.Items.Select(i => i.ChapterNumber).ToArray()
+                });
 
                 return Ok(ApiResponse<string>.Success("Bookmarks updated successfully"));
             }
             catch (Exception ex)
             {
+                if (ex.Message.Contains("Chapter not found") || ex.Message.Contains("Array lengths"))
+                {
+                    return BadRequest(ApiResponse<ErrorData>.Error("Bad Request", ex.Message));
+                }
                 return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to batch update bookmarks", ex.Message));
             }
         }
