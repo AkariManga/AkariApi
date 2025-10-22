@@ -372,6 +372,78 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Retrieves detailed information about multiple manga by their MyAnimeList IDs, including chapters.
+        /// </summary>
+        /// <param name="request">The request containing the list of MAL IDs.</param>
+        /// <returns>A list of detailed manga information.</returns>
+        [HttpPost("mal/batch")]
+        [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
+        [ProducesResponseType(typeof(ApiResponse<List<MangaDetailResponse>>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> BatchGetMangaByMalIds([FromBody] BatchGetMangaRequest request)
+        {
+            if (request.MalIds == null || !request.MalIds.Any())
+            {
+                return BadRequest(ApiResponse<ErrorData>.Error("At least one MAL ID is required"));
+            }
+
+            if (request.MalIds.Count > 50)
+            {
+                return BadRequest(ApiResponse<ErrorData>.Error("Maximum 50 MAL IDs allowed per request"));
+            }
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var response = await _supabaseService.Client
+                    .From<MangaWithChaptersDto>()
+                    .Filter("mal_id", Supabase.Postgrest.Constants.Operator.In, request.MalIds)
+                    .Select("*, chapters(*)")
+                    .Get();
+
+                var mangaList = response.Models.Select(manga =>
+                {
+                    var sortedChapters = manga.Chapters?.OrderBy(c => c.Number).ToList() ?? new List<ChapterDto>();
+                    return new MangaDetailResponse
+                    {
+                        Id = manga.Id,
+                        Title = manga.Title,
+                        Cover = manga.Cover,
+                        Description = manga.Description,
+                        Status = manga.Status,
+                        Type = manga.Type,
+                        Authors = manga.Authors,
+                        Genres = manga.Genres,
+                        Views = manga.Views,
+                        Score = manga.Score,
+                        AlternativeTitles = manga.AlternativeTitles,
+                        MalId = manga.MalId,
+                        AniId = manga.AniId,
+                        CreatedAt = manga.CreatedAt,
+                        UpdatedAt = manga.UpdatedAt,
+                        Chapters = sortedChapters.Select(c => new MangaChapter
+                        {
+                            Id = c.Id,
+                            Title = c.Title,
+                            Number = c.Number,
+                            Pages = c.Pages,
+                            UpdatedAt = c.UpdatedAt,
+                            CreatedAt = c.CreatedAt,
+                        }).ToList()
+                    };
+                }).ToList();
+
+                return Ok(ApiResponse<List<MangaDetailResponse>>.Success(mangaList));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve manga", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Retrieves a specific chapter of a manga by manga ID and chapter number.
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>

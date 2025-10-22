@@ -173,4 +173,12 @@ namespace AkariApi.Models
         [Range(1, 10)]
         public int Rating { get; set; }
     }
+
+    public class BatchGetMangaRequest
+    {
+        [Required]
+        [MinLength(1)]
+        [MaxLength(50)]
+        public List<int> MalIds { get; set; } = new List<int>();
+    }
 }
