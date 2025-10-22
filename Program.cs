@@ -34,6 +34,7 @@ builder.Services.AddSwaggerGen(options =>
         Description = "Please provide the access token via cookie"
     });
     options.OperationFilter<AkariApi.Filters.AuthorizeCheckOperationFilter>();
+    options.OperationFilter<AkariApi.Filters.RemoveExtraContentTypesOperationFilter>();
 });
 
 builder.Services.AddApiVersioning(options =>
