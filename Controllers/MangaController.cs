@@ -378,7 +378,7 @@ namespace AkariApi.Controllers
         /// <returns>A list of detailed manga information.</returns>
         [HttpPost("mal/batch")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
-        [ProducesResponseType(typeof(ApiResponse<List<MangaDetailResponse>>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<List<MangaResponse>>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> BatchGetMangaByMalIds([FromBody] BatchGetMangaRequest request)
@@ -400,13 +400,13 @@ namespace AkariApi.Controllers
                 var response = await _supabaseService.Client
                     .From<MangaWithChaptersDto>()
                     .Filter("mal_id", Supabase.Postgrest.Constants.Operator.In, request.MalIds)
-                    .Select("*, chapters(*)")
+                    .Select("*")
                     .Get();
 
                 var mangaList = response.Models.Select(manga =>
                 {
                     var sortedChapters = manga.Chapters?.OrderBy(c => c.Number).ToList() ?? new List<ChapterDto>();
-                    return new MangaDetailResponse
+                    return new MangaResponse
                     {
                         Id = manga.Id,
                         Title = manga.Title,
@@ -423,19 +423,10 @@ namespace AkariApi.Controllers
                         AniId = manga.AniId,
                         CreatedAt = manga.CreatedAt,
                         UpdatedAt = manga.UpdatedAt,
-                        Chapters = sortedChapters.Select(c => new MangaChapter
-                        {
-                            Id = c.Id,
-                            Title = c.Title,
-                            Number = c.Number,
-                            Pages = c.Pages,
-                            UpdatedAt = c.UpdatedAt,
-                            CreatedAt = c.CreatedAt,
-                        }).ToList()
                     };
                 }).ToList();
 
-                return Ok(ApiResponse<List<MangaDetailResponse>>.Success(mangaList));
+                return Ok(ApiResponse<List<MangaResponse>>.Success(mangaList));
             }
             catch (Exception ex)
             {
