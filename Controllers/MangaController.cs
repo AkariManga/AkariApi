@@ -23,7 +23,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves the latest manga with pagination.
+        /// Get latest manga
         /// </summary>
         /// <param name="page">The page number.</param>
         /// <param name="pageSize">The number of items per page.</param>
@@ -87,7 +87,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves popular manga based on recent views.
+        /// Get popular manga
         /// </summary>
         /// <param name="days">The number of days to look back for views.</param>
         /// <param name="limit">The maximum number of results.</param>
@@ -153,7 +153,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves detailed information about a manga by its ID, including chapters.
+        /// Get manga by ID
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
         /// <returns>Detailed manga information.</returns>
@@ -216,7 +216,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Updates the views of a manga by its ID.
+        /// Update manga views
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
         [HttpPost("{id}/view")]
@@ -269,7 +269,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Rates a manga by its ID.
+        /// Rate a manga
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
         /// <param name="request">The rating request containing the rating value.</param>
@@ -309,7 +309,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves detailed information about a manga by its MyAnimeList ID, including chapters.
+        /// Get manga by MAL ID
         /// </summary>
         /// <param name="id">The MyAnimeList ID of the manga.</param>
         /// <returns>Detailed manga information.</returns>
@@ -372,7 +372,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves detailed information about multiple manga by their MyAnimeList IDs, including chapters.
+        /// Get manga by MAL IDs
         /// </summary>
         /// <param name="request">The request containing the list of MAL IDs.</param>
         /// <returns>A list of detailed manga information.</returns>
@@ -435,7 +435,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves a specific chapter of a manga by manga ID and chapter number.
+        /// Get manga chapter
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
         /// <param name="subId">The chapter number.</param>
@@ -470,7 +470,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Searches for manga based on a query string with optional limit.
+        /// Search manga
         /// </summary>
         /// <param name="query">The search query string.</param>
         /// <param name="limit">The maximum number of results.</param>

@@ -21,7 +21,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves a list of manga where the authors include the specified name.
+        /// Get manga by author
         /// </summary>
         /// <param name="name">The author name to search for.</param>
         /// <param name="page">The page number.</param>

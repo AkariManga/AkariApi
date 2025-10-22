@@ -26,7 +26,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves the user's bookmarks with pagination.
+        /// Get bookmarks
         /// </summary>
         /// <param name="page">The page number.</param>
         /// <param name="pageSize">The number of items per page.</param>
@@ -85,7 +85,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Updates the last read chapter for a manga in the user's bookmarks.
+        /// Update bookmark
         /// </summary>
         /// <param name="mangaId">The manga ID.</param>
         /// <param name="request">The update request containing chapter number.</param>
@@ -126,7 +126,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Gets the last read chapter for a specific manga.
+        /// Get last read chapter
         /// </summary>
         /// <param name="mangaId">The manga ID.</param>
         /// <returns>The last read chapter details.</returns>
@@ -186,7 +186,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Deletes the bookmark for a specific manga.
+        /// Delete bookmark
         /// </summary>
         /// <param name="mangaId">The manga ID.</param>
         /// <returns>Success message.</returns>
@@ -231,7 +231,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Batch updates bookmarks for multiple manga.
+        /// Batch update bookmarks
         /// </summary>
         /// <param name="request">The batch update request.</param>
         /// <returns>Success message.</returns>

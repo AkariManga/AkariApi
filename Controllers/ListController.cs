@@ -23,7 +23,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves a user's manga lists with pagination.
+        /// Get user lists
         /// </summary>
         /// <param name="userId">The user ID.</param>
         /// <param name="page">The page number.</param>
@@ -83,7 +83,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves a specific manga list with all its entries.
+        /// Get list with entries
         /// </summary>
         /// <param name="id">The list ID.</param>
         /// <returns>The manga list with all its entries.</returns>
@@ -150,7 +150,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves the authenticated user's manga lists with pagination.
+        /// Get my lists
         /// </summary>
         /// <param name="page">The page number.</param>
         /// <param name="pageSize">The number of items per page.</param>
@@ -216,7 +216,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Creates a new manga list for the authenticated user.
+        /// Create a list
         /// </summary>
         /// <param name="request">The create list request.</param>
         /// <returns>The created manga list.</returns>
@@ -278,7 +278,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Adds an entry to a list and automatically assigns the next order index.
+        /// Add entry to list
         /// </summary>
         /// <param name="listId">The list ID.</param>
         /// <param name="request">The create entry request (manga id).</param>
@@ -396,7 +396,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Removes an entry from a list.
+        /// Remove entry from list
         /// </summary>
         /// <param name="listId">The list ID.</param>
         /// <param name="entryId">The entry ID.</param>
@@ -455,7 +455,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Updates the order of an entry in a list and adjusts the order of other entries accordingly.
+        /// Update entry order
         /// </summary>
         /// <param name="listId">The list ID.</param>
         /// <param name="entryId">The entry ID.</param>

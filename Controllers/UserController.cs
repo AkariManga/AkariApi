@@ -21,7 +21,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Creates a new user.
+        /// Create a user
         /// </summary>
         /// <param name="request">The signup request containing email and password.</param>
         /// <returns>The signup response.</returns>
@@ -69,7 +69,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Signs in an existing user.
+        /// Sign in a user
         /// </summary>
         /// <param name="request">The signin request containing email and password.</param>
         /// <returns>The signin response.</returns>
@@ -113,7 +113,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Signs out the current user.
+        /// Sign out a user
         /// </summary>
         /// <returns>The signout response.</returns>
         [HttpPost("signout")]
@@ -140,7 +140,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Gets the current authenticated user.
+        /// Get current user
         /// </summary>
         /// <returns>The user information.</returns>
         [HttpGet("me")]

@@ -22,7 +22,7 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Retrieves a list of manga where the genres include the specified name.
+        /// Get manga by genre
         /// </summary>
         /// <param name="name">The genre name to search for.</param>
         /// <param name="page">The page number.</param>
