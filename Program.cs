@@ -26,6 +26,14 @@ builder.Services.AddSwaggerGen(options =>
     {
         options.AddServer(new Microsoft.OpenApi.Models.OpenApiServer { Url = "https://api.akarimanga.dpdns.org/" });
     }
+    options.AddSecurityDefinition("CookieAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
+        Name = "accessToken",
+        Description = "Please provide the access token via cookie"
+    });
+    options.OperationFilter<AkariApi.Filters.AuthorizeCheckOperationFilter>();
 });
 
 builder.Services.AddApiVersioning(options =>
