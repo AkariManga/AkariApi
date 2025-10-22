@@ -14,7 +14,7 @@ namespace AkariApi.Filters
             var hasOptionalAttribute = context.MethodInfo.GetCustomAttributes(true).Any(attr => attr is OptionalTokenRefreshAttribute) ||
                                        context.MethodInfo.DeclaringType?.GetCustomAttributes(true).Any(attr => attr is OptionalTokenRefreshAttribute) == true;
 
-            if (hasRequireAttribute)
+            if (hasRequireAttribute || hasOptionalAttribute)
             {
                 operation.Security = new List<OpenApiSecurityRequirement>
                 {
@@ -34,9 +34,9 @@ namespace AkariApi.Filters
                     }
                 };
             }
-            else if (hasOptionalAttribute)
+            if (hasOptionalAttribute)
             {
-                operation.Description += "\n\n**Note:** Authentication is optional for this endpoint.";
+                operation.Description += "\n*Authentication is optional for this endpoint.*";
             }
         }
     }

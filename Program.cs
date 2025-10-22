@@ -31,7 +31,6 @@ builder.Services.AddSwaggerGen(options =>
         Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
         In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
         Name = "accessToken",
-        Description = "Please provide the access token via cookie"
     });
     options.OperationFilter<AkariApi.Filters.AuthorizeCheckOperationFilter>();
     options.OperationFilter<AkariApi.Filters.RemoveExtraContentTypesOperationFilter>();
