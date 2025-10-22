@@ -15,7 +15,6 @@ namespace AkariApi.Models
     public class BookmarkResponse
     {
         public Guid BookmarkId { get; set; }
-        public Guid? LastReadChapterId { get; set; }
         public DateTimeOffset BookmarkCreatedAt { get; set; }
         public DateTimeOffset BookmarkUpdatedAt { get; set; }
         public Guid MangaId { get; set; }
@@ -34,6 +33,7 @@ namespace AkariApi.Models
         public string[]? AlternativeTitles { get; set; }
         public DateTimeOffset MangaCreatedAt { get; set; }
         public DateTimeOffset MangaUpdatedAt { get; set; }
+        public BookmarkChapter LastReadChapter { get; set; } = new BookmarkChapter();
         public List<BookmarkChapter> Chapters { get; set; } = new List<BookmarkChapter>();
     }
 
