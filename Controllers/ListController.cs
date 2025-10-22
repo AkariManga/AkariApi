@@ -280,16 +280,16 @@ namespace AkariApi.Controllers
         /// <summary>
         /// Add entry to list
         /// </summary>
-        /// <param name="listId">The list ID.</param>
+        /// <param name="id">The list ID.</param>
         /// <param name="request">The create entry request (manga id).</param>
         /// <returns>The created list entry.</returns>
-        [HttpPost("{listId}")]
+        [HttpPost("{id}")]
         [ProducesResponseType(typeof(ApiResponse<UserMangaListEntryResponse>), 201)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
-        public async Task<IActionResult> AddEntryToList(Guid listId, [FromBody] CreateUserMangaListEntryRequest request)
+        public async Task<IActionResult> AddEntryToList(Guid id, [FromBody] CreateUserMangaListEntryRequest request)
         {
             if (!ModelState.IsValid)
             {
@@ -308,7 +308,7 @@ namespace AkariApi.Controllers
 
                 var listResp = await _supabaseService.Client
                     .From<UserMangaListDto>()
-                    .Where(l => l.Id == listId)
+                    .Where(l => l.Id == id)
                     .Select("*")
                     .Get();
 
@@ -320,7 +320,7 @@ namespace AkariApi.Controllers
                 // Compute next order index (max + 1)
                 var entriesResp = await _supabaseService.Client
                     .From<UserMangaListEntryDto>()
-                    .Where(e => e.ListId == listId)
+                    .Where(e => e.ListId == id)
                     .Select("order_index")
                     .Order("order_index", Supabase.Postgrest.Constants.Ordering.Descending)
                     .Limit(1)
@@ -334,7 +334,7 @@ namespace AkariApi.Controllers
 
                 var entryDto = new UserMangaListEntryDto
                 {
-                    ListId = listId,
+                    ListId = id,
                     MangaId = request.MangaId,
                     OrderIndex = nextIndex,
                     CreatedAt = DateTimeOffset.UtcNow,
@@ -357,14 +357,14 @@ namespace AkariApi.Controllers
                     UpdatedAt = created.UpdatedAt
                 };
 
-                return CreatedAtAction(nameof(GetListWithEntries), new { id = listId }, ApiResponse<UserMangaListEntryResponse>.Success(result));
+                return CreatedAtAction(nameof(GetListWithEntries), new { id }, ApiResponse<UserMangaListEntryResponse>.Success(result));
             }
             catch (PostgrestException ex) when (ex.Message.Contains("duplicate key") || ex.Message.Contains("23505"))
             {
                 // Manga already exists in the list, return the existing entry
                 var existingResp = await _supabaseService.Client
                     .From<UserMangaListEntryDto>()
-                    .Where(e => e.ListId == listId && e.MangaId == request.MangaId)
+                    .Where(e => e.ListId == id && e.MangaId == request.MangaId)
                     .Select("*")
                     .Get();
 
@@ -398,15 +398,15 @@ namespace AkariApi.Controllers
         /// <summary>
         /// Remove entry from list
         /// </summary>
-        /// <param name="listId">The list ID.</param>
+        /// <param name="id">The list ID.</param>
         /// <param name="entryId">The entry ID.</param>
         /// <returns>Success message on deletion.</returns>
-        [HttpDelete("{listId}/{entryId}")]
+        [HttpDelete("{id}/{entryId}")]
         [ProducesResponseType(typeof(ApiResponse<string>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
-        public async Task<IActionResult> RemoveEntryFromList(Guid listId, Guid entryId)
+        public async Task<IActionResult> RemoveEntryFromList(Guid id, Guid entryId)
         {
             try
             {
@@ -420,7 +420,7 @@ namespace AkariApi.Controllers
 
                 var listResp = await _supabaseService.Client
                     .From<UserMangaListDto>()
-                    .Where(l => l.Id == listId)
+                    .Where(l => l.Id == id)
                     .Select("*")
                     .Get();
 
@@ -432,7 +432,7 @@ namespace AkariApi.Controllers
                 // Verify entry exists and belongs to this list
                 var entryResp = await _supabaseService.Client
                     .From<UserMangaListEntryDto>()
-                    .Where(e => e.Id == entryId && e.ListId == listId)
+                    .Where(e => e.Id == entryId && e.ListId == id)
                     .Select("*")
                     .Get();
 
@@ -461,13 +461,13 @@ namespace AkariApi.Controllers
         /// <param name="entryId">The entry ID.</param>
         /// <param name="request">The update request with the new order index.</param>
         /// <returns>The updated entry.</returns>
-        [HttpPut("{listId}/{entryId}")]
+        [HttpPut("{id}/{entryId}")]
         [ProducesResponseType(typeof(ApiResponse<UserMangaListEntryResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
-        public async Task<IActionResult> UpdateEntryOrder(Guid listId, Guid entryId, [FromBody] UpdateUserMangaListEntryRequest request)
+        public async Task<IActionResult> UpdateEntryOrder(Guid id, Guid entryId, [FromBody] UpdateUserMangaListEntryRequest request)
         {
             if (!ModelState.IsValid)
             {
@@ -487,7 +487,7 @@ namespace AkariApi.Controllers
                 // Check if list exists and belongs to user
                 var listResp = await _supabaseService.Client
                     .From<UserMangaListDto>()
-                    .Where(l => l.Id == listId && l.UserId == userId)
+                    .Where(l => l.Id == id && l.UserId == userId)
                     .Select("*")
                     .Get();
 
@@ -499,7 +499,7 @@ namespace AkariApi.Controllers
                 // Check if entry exists and belongs to this list
                 var entryResp = await _supabaseService.Client
                     .From<UserMangaListEntryDto>()
-                    .Where(e => e.Id == entryId && e.ListId == listId)
+                    .Where(e => e.Id == entryId && e.ListId == id)
                     .Select("*")
                     .Get();
 
@@ -527,7 +527,7 @@ namespace AkariApi.Controllers
                     return Ok(ApiResponse<UserMangaListEntryResponse>.Success(noChangeResult));
                 }
 
-                await _supabaseService.Client.Rpc("move_list_entry", new { p_list_id = listId, p_entry_id = entryId, p_new_order_index = newOrder });
+                await _supabaseService.Client.Rpc("move_list_entry", new { p_list_id = id, p_entry_id = entryId, p_new_order_index = newOrder });
                 var updatedResp = await _supabaseService.Client
                     .From<UserMangaListEntryDto>()
                     .Where(e => e.Id == entryId)
