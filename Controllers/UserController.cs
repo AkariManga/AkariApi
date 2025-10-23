@@ -40,9 +40,19 @@ namespace AkariApi.Controllers
             {
                 await _supabaseService.InitializeAsync();
 
+                var existingUser = await _supabaseService.Client
+                    .From<ProfileDto>()
+                    .Select("username")
+                    .Where(u => u.UserName == request.UserName)
+                    .Get();
+                if (existingUser != null && existingUser.Models.Count > 0)
+                {
+                    return BadRequest(ApiResponse<ErrorData>.Error("Invalid request", "Username already taken"));
+                }
+
                 var options = new Supabase.Gotrue.SignUpOptions
                 {
-                    Data = new Dictionary<string, object> { { "username", request.UserName } }
+                    Data = new Dictionary<string, object> { { "username", request.UserName }, { "display_name", request.DisplayName } }
                 };
                 var session = await _supabaseService.Client.Auth.SignUp(request.Email, request.Password, options);
 
