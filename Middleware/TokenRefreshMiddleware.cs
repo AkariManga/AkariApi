@@ -10,7 +10,7 @@ namespace AkariApi.Middleware
     {
         private readonly RequestDelegate _next;
 
-        public TokenRefreshMiddleware(RequestDelegate next, ILogger<TokenRefreshMiddleware> logger)
+        public TokenRefreshMiddleware(RequestDelegate next)
         {
             _next = next;
         }
