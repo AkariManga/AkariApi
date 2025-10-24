@@ -20,11 +20,11 @@ builder.Services.AddSwaggerGen(options =>
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, "AkariApi.xml"));
     if (builder.Environment.IsDevelopment())
     {
-        options.AddServer(new Microsoft.OpenApi.Models.OpenApiServer { Url = "http://localhost:5188/" });
+        options.AddServer(new Microsoft.OpenApi.Models.OpenApiServer { Url = "http://localhost:5188" });
     }
     else
     {
-        options.AddServer(new Microsoft.OpenApi.Models.OpenApiServer { Url = "https://api.akarimanga.dpdns.org/" });
+        options.AddServer(new Microsoft.OpenApi.Models.OpenApiServer { Url = "https://api.akarimanga.dpdns.org" });
     }
     options.AddSecurityDefinition("CookieAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
