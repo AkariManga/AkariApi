@@ -111,15 +111,10 @@ app.UseSwagger(options =>
         httpReq.HttpContext.Response.Headers["Cache-Control"] = "no-cache";
     });
 });
-if (builder.Environment.IsDevelopment())
+app.UseSwaggerUI(options =>
 {
-    app.UseSwaggerUI(options =>
-    {
-        options.SwaggerEndpoint("/swagger/v2/swagger.json", "AkariApi v2");
-    });
-}
-
-app.UseHttpsRedirection();
+    options.SwaggerEndpoint("/swagger/v2/swagger.json", "AkariApi v2");
+});
 
 app.UseCors("AllowAkari");
 
