@@ -510,5 +510,354 @@ namespace AkariApi.Controllers
                 return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to search manga", ex.Message));
             }
         }
+
+        /// <summary>
+        /// Get comments for a chapter
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <param name="subId">The chapter number.</param>
+        /// <returns>A list of comments for the chapter.</returns>
+        [HttpGet("{id}/{subId}/comments")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes)]
+        [ProducesResponseType(typeof(ApiResponse<List<CommentResponse>>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> GetChapterComments(Guid id, float subId)
+        {
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                // First get the chapter
+                var chapter = await _supabaseService.Client
+                    .From<ChapterDto>()
+                    .Where(c => c.MangaId == id && c.Number == subId)
+                    .Single();
+
+                if (chapter == null)
+                    return NotFound(ApiResponse<ErrorData>.Error("Chapter not found", status: 404));
+
+                // Get all comments for this chapter
+                var commentsResponse = await _supabaseService.Client
+                    .From<ChapterCommentDto>()
+                    .Where(c => c.ChapterId == chapter.Id && !c.Deleted)
+                    .Order("created_at", Supabase.Postgrest.Constants.Ordering.Ascending)
+                    .Get();
+
+                var comments = commentsResponse.Models.Select(c => new CommentResponse
+                {
+                    Id = c.Id,
+                    ChapterId = c.ChapterId,
+                    UserId = c.UserId,
+                    ParentId = c.ParentId,
+                    Content = c.Content,
+                    CreatedAt = c.CreatedAt,
+                    UpdatedAt = c.UpdatedAt,
+                    Edited = c.Edited,
+                    Deleted = c.Deleted,
+                    Upvotes = c.Upvotes,
+                    Downvotes = c.Downvotes
+                }).ToList();
+
+                // Build nested structure
+                var topLevelComments = comments.Where(c => c.ParentId == null).ToList();
+                foreach (var comment in topLevelComments)
+                {
+                    comment.Replies = GetReplies(comment.Id, comments);
+                }
+
+                return Ok(ApiResponse<List<CommentResponse>>.Success(topLevelComments));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve comments", ex.Message));
+            }
+        }
+
+        private List<CommentResponse> GetReplies(Guid parentId, List<CommentResponse> allComments)
+        {
+            var replies = allComments.Where(c => c.ParentId == parentId).ToList();
+            foreach (var reply in replies)
+            {
+                reply.Replies = GetReplies(reply.Id, allComments);
+            }
+            return replies.OrderBy(c => c.CreatedAt).ToList();
+        }
+
+        /// <summary>
+        /// Create a comment on a chapter
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <param name="subId">The chapter number.</param>
+        /// <param name="request">The comment request.</param>
+        /// <returns>A success message.</returns>
+        [HttpPost("{id}/{subId}/comments")]
+        [RequireTokenRefresh]
+        [ProducesResponseType(typeof(ApiResponse<CommentResponse>), 201)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> CreateComment(Guid id, float subId, [FromBody] CreateCommentRequest request)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                // Get the chapter
+                var chapter = await _supabaseService.Client
+                    .From<ChapterDto>()
+                    .Where(c => c.MangaId == id && c.Number == subId)
+                    .Single();
+
+                if (chapter == null)
+                    return NotFound(ApiResponse<ErrorData>.Error("Chapter not found", status: 404));
+
+                // If parent comment exists, validate it belongs to the same chapter
+                if (request.ParentId.HasValue)
+                {
+                    var parentComment = await _supabaseService.Client
+                        .From<ChapterCommentDto>()
+                        .Where(c => c.Id == request.ParentId.Value)
+                        .Single();
+
+                    if (parentComment == null || parentComment.ChapterId != chapter.Id)
+                        return BadRequest(ApiResponse<ErrorData>.Error("Invalid parent comment"));
+                }
+
+                var comment = new ChapterCommentDto
+                {
+                    ChapterId = chapter.Id,
+                    UserId = userId,
+                    ParentId = request.ParentId,
+                    Content = request.Content,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    Edited = false,
+                    Deleted = false,
+                    Upvotes = 0,
+                    Downvotes = 0
+                };
+
+                var response = await _supabaseService.Client.From<ChapterCommentDto>().Insert(comment);
+
+                var createdComment = response.Models.FirstOrDefault();
+                if (createdComment == null)
+                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to create comment"));
+
+                var commentResponse = new CommentResponse
+                {
+                    Id = createdComment.Id,
+                    ChapterId = createdComment.ChapterId,
+                    UserId = createdComment.UserId,
+                    ParentId = createdComment.ParentId,
+                    Content = createdComment.Content,
+                    CreatedAt = createdComment.CreatedAt,
+                    UpdatedAt = createdComment.UpdatedAt,
+                    Edited = createdComment.Edited,
+                    Deleted = createdComment.Deleted,
+                    Upvotes = createdComment.Upvotes,
+                    Downvotes = createdComment.Downvotes
+                };
+
+                return Created("", ApiResponse<CommentResponse>.Success(commentResponse));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to create comment", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Update a comment
+        /// </summary>
+        /// <param name="commentId">The unique identifier of the comment.</param>
+        /// <param name="request">The update request.</param>
+        /// <returns>A success message.</returns>
+        [HttpPut("comment/{commentId}")]
+        [RequireTokenRefresh]
+        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 403)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> UpdateComment(Guid commentId, [FromBody] UpdateCommentRequest request)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var comment = await _supabaseService.Client
+                    .From<ChapterCommentDto>()
+                    .Where(c => c.Id == commentId)
+                    .Single();
+
+                if (comment == null)
+                    return NotFound(ApiResponse<ErrorData>.Error("Comment not found", status: 404));
+
+                if (comment.UserId != userId)
+                    return StatusCode(403, ApiResponse<ErrorData>.Error("Forbidden", "You can only edit your own comments"));
+
+                if (comment.Deleted)
+                    return BadRequest(ApiResponse<ErrorData>.Error("Cannot edit deleted comment"));
+
+                comment.Content = request.Content;
+                comment.UpdatedAt = DateTimeOffset.UtcNow;
+                comment.Edited = true;
+
+                await _supabaseService.Client.From<ChapterCommentDto>().Update(comment);
+
+                return Ok(ApiResponse<string>.Success("Comment updated successfully"));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to update comment", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Delete a comment
+        /// </summary>
+        /// <param name="commentId">The unique identifier of the comment.</param>
+        /// <returns>A success message.</returns>
+        [HttpDelete("comment/{commentId}")]
+        [RequireTokenRefresh]
+        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 403)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> DeleteComment(Guid commentId)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var comment = await _supabaseService.Client
+                    .From<ChapterCommentDto>()
+                    .Where(c => c.Id == commentId)
+                    .Single();
+
+                if (comment == null)
+                    return NotFound(ApiResponse<ErrorData>.Error("Comment not found", status: 404));
+
+                if (comment.UserId != userId)
+                    return StatusCode(403, ApiResponse<ErrorData>.Error("Forbidden", "You can only delete your own comments"));
+
+                // Soft delete
+                comment.Deleted = true;
+                comment.Content = "[deleted]";
+                comment.UpdatedAt = DateTimeOffset.UtcNow;
+
+                await _supabaseService.Client.From<ChapterCommentDto>().Update(comment);
+
+                return Ok(ApiResponse<string>.Success("Comment deleted successfully"));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to delete comment", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Vote on a comment
+        /// </summary>
+        /// <param name="commentId">The unique identifier of the comment.</param>
+        /// <param name="request">The vote request.</param>
+        /// <returns>A success message.</returns>
+        [HttpPost("comment/{commentId}/vote")]
+        [RequireTokenRefresh]
+        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> VoteComment(Guid commentId, [FromBody] VoteCommentRequest request)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var comment = await _supabaseService.Client
+                    .From<ChapterCommentDto>()
+                    .Where(c => c.Id == commentId)
+                    .Single();
+
+                if (comment == null)
+                    return NotFound(ApiResponse<ErrorData>.Error("Comment not found", status: 404));
+
+                if (comment.Deleted)
+                    return BadRequest(ApiResponse<ErrorData>.Error("Cannot vote on deleted comment"));
+
+                // Check if user already voted
+                var existingVote = await _supabaseService.Client
+                    .From<ChapterCommentVoteDto>()
+                    .Where(v => v.CommentId == commentId && v.UserId == userId)
+                    .Single();
+
+                if (existingVote != null)
+                {
+                    // Update existing vote
+                    var oldValue = existingVote.Value;
+                    existingVote.Value = request.Value;
+                    await _supabaseService.Client.From<ChapterCommentVoteDto>().Update(existingVote);
+
+                    // Update comment vote counts
+                    if (oldValue == 1) comment.Upvotes--;
+                    else if (oldValue == -1) comment.Downvotes--;
+
+                    if (request.Value == 1) comment.Upvotes++;
+                    else if (request.Value == -1) comment.Downvotes++;
+                }
+                else
+                {
+                    // New vote
+                    var vote = new ChapterCommentVoteDto
+                    {
+                        CommentId = commentId,
+                        UserId = userId,
+                        Value = request.Value
+                    };
+
+                    await _supabaseService.Client.From<ChapterCommentVoteDto>().Insert(vote);
+
+                    if (request.Value == 1) comment.Upvotes++;
+                    else if (request.Value == -1) comment.Downvotes++;
+                }
+
+                await _supabaseService.Client.From<ChapterCommentDto>().Update(comment);
+
+                return Ok(ApiResponse<string>.Success("Vote recorded successfully"));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to vote on comment", ex.Message));
+            }
+        }
     }
 }
