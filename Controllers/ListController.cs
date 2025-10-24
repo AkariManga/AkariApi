@@ -156,7 +156,7 @@ namespace AkariApi.Controllers
         /// <param name="page">The page number.</param>
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A paginated list of the user's manga lists.</returns>
-        [HttpGet("me")]
+        [HttpGet("user/me")]
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
         [ProducesResponseType(typeof(ApiResponse<UserMangaListPaginatedResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
