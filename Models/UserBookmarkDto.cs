@@ -27,6 +27,28 @@ namespace AkariApi.Models
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
+    [Table("user_bookmarks_unread")]
+    public class UserBookmarkUnreadDto : BaseModel
+    {
+        [PrimaryKey("id")]
+        public Guid Id { get; set; } = Guid.NewGuid();
+
+        [Column("user_id")]
+        public Guid UserId { get; set; }
+
+        [Column("manga_id")]
+        public Guid MangaId { get; set; }
+
+        [Column("last_read_chapter_id")]
+        public Guid? LastReadChapterId { get; set; }
+
+        [Column("updated_at")]
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+        [Column("created_at")]
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
     public class UpdateBookmarkRequest
     {
         public double ChapterNumber { get; set; }

@@ -85,6 +85,40 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Get unread bookmarks count
+        /// </summary>
+        /// <returns>The number of unread bookmarked manga.</returns>
+        [HttpGet("unread")]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [ProducesResponseType(typeof(ApiResponse<int>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> GetUnreadBookmarksCount()
+        {
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                }
+
+                var count = await _supabaseService.Client
+                    .From<UserBookmarkUnreadDto>()
+                    .Where(b => b.UserId == userId)
+                    .Count(Supabase.Postgrest.Constants.CountType.Exact);
+
+                return Ok(ApiResponse<int>.Success(count));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve unread bookmarks count", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Update bookmark
         /// </summary>
         /// <param name="mangaId">The manga ID.</param>
