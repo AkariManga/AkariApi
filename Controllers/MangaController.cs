@@ -23,66 +23,99 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Get latest manga
+        /// Get manga list
         /// </summary>
+        /// <param name="sortBy">The sort order: 'popular', 'latest', 'newest'.</param>
+        /// <param name="genres">Filter by genres.</param>
+        /// <param name="authors">Filter by authors.</param>
         /// <param name="page">The page number.</param>
         /// <param name="pageSize">The number of items per page.</param>
-        /// <returns>A list of the latest manga.</returns>
-        [HttpGet("list/latest")]
-        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes)]
+        /// <returns>A list of manga.</returns>
+        [HttpGet("list")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.OneHour)]
         [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
-        public async Task<IActionResult> GetLatestManga([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
+        public async Task<IActionResult> GetMangaList(
+            [FromQuery] string sortBy = "latest",
+            [FromQuery] string[]? genres = null,
+            [FromQuery] string[]? authors = null,
+            [FromQuery, Range(1, int.MaxValue)] int page = 1,
+            [FromQuery, Range(1, 100)] int pageSize = 20
+        )
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
+            var offset = (clampedPage - 1) * clampedPageSize;
 
             try
             {
                 await _supabaseService.InitializeAsync();
 
-                var totalCount = await _supabaseService.Client
-                    .From<MangaDto>()
-                    .Count(Supabase.Postgrest.Constants.CountType.Exact);
-                var offset = (clampedPage - 1) * clampedPageSize;
-
-                var response = await _supabaseService.Client
-                    .From<MangaDto>()
-                    .Select("*")
-                    .Order("updated_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Offset(offset)
-                    .Limit(clampedPageSize)
-                    .Get();
-
-                var mangaList = response.Models.Select(m => new MangaResponse
+                var rpcResponse = await _supabaseService.Client.Rpc("get_manga", new
                 {
-                    Id = m.Id,
-                    Title = m.Title,
-                    Cover = m.Cover,
-                    Description = m.Description,
-                    Status = m.Status,
-                    Type = m.Type,
-                    Authors = m.Authors,
-                    Genres = m.Genres,
-                    Views = m.Views,
-                    Score = m.Score,
-                    AlternativeTitles = m.AlternativeTitles,
-                    MalId = m.MalId,
-                    AniId = m.AniId,
-                    CreatedAt = m.CreatedAt,
-                    UpdatedAt = m.UpdatedAt,
-                }).ToList();
+                    p_limit = clampedPageSize,
+                    p_offset = offset,
+                    p_sort_by = sortBy,
+                    p_genres = genres,
+                    p_authors = authors
+                });
+
+                if (string.IsNullOrEmpty(rpcResponse.Content))
+                {
+                    return Ok(ApiResponse<MangaListResponse>.Success(new MangaListResponse
+                    {
+                        Items = new List<MangaResponse>(),
+                        TotalItems = 0,
+                        CurrentPage = clampedPage,
+                        PageSize = clampedPageSize
+                    }));
+                }
+
+                var rpcResults = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(rpcResponse.Content, _jsonOptions);
+
+                var mangaList = new List<MangaResponse>();
+                long totalCount = 0;
+
+                foreach (var item in rpcResults ?? new List<Dictionary<string, JsonElement>>())
+                {
+                    if (item.TryGetValue("id", out var idElement) && idElement.ValueKind == JsonValueKind.String && Guid.TryParse(idElement.GetString(), out var id))
+                    {
+                        var manga = new MangaResponse
+                        {
+                            Id = id,
+                            Title = item.TryGetValue("title", out var title) && title.ValueKind == JsonValueKind.String ? title.GetString() ?? "" : "",
+                            Cover = item.TryGetValue("cover", out var cover) && cover.ValueKind == JsonValueKind.String ? cover.GetString() ?? "" : "",
+                            Description = item.TryGetValue("description", out var desc) && desc.ValueKind == JsonValueKind.String ? desc.GetString() ?? "" : "",
+                            Status = item.TryGetValue("status", out var status) && status.ValueKind == JsonValueKind.String ? status.GetString() ?? "" : "",
+                            Type = item.TryGetValue("type", out var type) && type.ValueKind == JsonValueKind.String && Enum.TryParse<MangaType>(type.GetString(), out var mangaType) ? mangaType : MangaType.Manga,
+                            Authors = item.TryGetValue("authors", out var authorsArr) && authorsArr.ValueKind == JsonValueKind.Array ? authorsArr.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : Array.Empty<string>(),
+                            Genres = item.TryGetValue("genres", out var genresArr) && genresArr.ValueKind == JsonValueKind.Array ? genresArr.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : Array.Empty<string>(),
+                            Views = item.TryGetValue("view_count", out var views) && views.ValueKind == JsonValueKind.Number && views.TryGetInt64(out var viewCount) ? (int)viewCount : 0,
+                            Score = item.TryGetValue("score", out var score) && score.ValueKind == JsonValueKind.Number && score.TryGetDecimal(out var scoreVal) ? scoreVal : 0,
+                            AlternativeTitles = item.TryGetValue("alternative_titles", out var altTitles) && altTitles.ValueKind == JsonValueKind.Array ? altTitles.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : null,
+                            MalId = item.TryGetValue("mal_id", out var malId) && malId.ValueKind == JsonValueKind.Number && malId.TryGetInt32(out var malIdVal) ? malIdVal : null,
+                            AniId = item.TryGetValue("ani_id", out var aniId) && aniId.ValueKind == JsonValueKind.Number && aniId.TryGetInt32(out var aniIdVal) ? aniIdVal : null,
+                            CreatedAt = item.TryGetValue("created_at", out var created) && created.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(created.GetString(), out var createdAt) ? createdAt : DateTimeOffset.UtcNow,
+                            UpdatedAt = item.TryGetValue("updated_at", out var updated) && updated.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(updated.GetString(), out var updatedAt) ? updatedAt : DateTimeOffset.UtcNow,
+                        };
+                        mangaList.Add(manga);
+                    }
+                    if (item.TryGetValue("total_count", out var total) && total.ValueKind == JsonValueKind.Number && total.TryGetInt64(out var totalVal))
+                    {
+                        totalCount = totalVal;
+                    }
+                }
 
                 return Ok(ApiResponse<MangaListResponse>.Success(new MangaListResponse
                 {
                     Items = mangaList,
-                    TotalItems = totalCount,
+                    TotalItems = (int)totalCount,
                     CurrentPage = clampedPage,
                     PageSize = clampedPageSize
                 }));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve latest manga", ex.Message));
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve manga list", ex.Message));
             }
         }
 
