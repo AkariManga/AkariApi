@@ -43,7 +43,7 @@ namespace AkariApi.Controllers
                 var existingUser = await _supabaseService.Client
                     .From<ProfileDto>()
                     .Select("username")
-                    .Where(u => u.UserName == request.UserName)
+                    .Where(u => u.Username == request.UserName)
                     .Get();
                 if (existingUser != null && existingUser.Models.Count > 0)
                 {

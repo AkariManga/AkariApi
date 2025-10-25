@@ -10,7 +10,7 @@ namespace AkariApi.Models
         public Guid Id { get; set; }
 
         [Column("username")]
-        public string UserName { get; set; } = string.Empty;
+        public string Username { get; set; } = string.Empty;
 
         [Column("display_name")]
         public string DisplayName { get; set; } = string.Empty;

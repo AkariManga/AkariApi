@@ -535,7 +535,8 @@ namespace AkariApi.Controllers
                 // First get the chapter
                 var chapter = await _supabaseService.Client
                     .From<ChapterDto>()
-                    .Where(c => c.MangaId == id && c.Number == subId)
+                    .Where(c => c.MangaId == id)
+                    .Where(c => c.Number == subId)
                     .Single();
 
                 if (chapter == null)
@@ -774,7 +775,7 @@ namespace AkariApi.Controllers
                     UserProfile = new UserProfile
                     {
                         Id = userProfile.Id,
-                        Username = userProfile.UserName,
+                        Username = userProfile.Username,
                         DisplayName = userProfile.DisplayName
                     },
                     ParentId = createdComment.ParentId,
