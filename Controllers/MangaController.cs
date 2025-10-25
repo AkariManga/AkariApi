@@ -516,14 +516,18 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
         /// <param name="subId">The chapter number.</param>
-        /// <returns>A list of comments for the chapter.</returns>
+        /// <param name="page">The page number.</param>
+        /// <param name="pageSize">The number of items per page.</param>
+        /// <returns>A paginated list of top-level comments for the chapter.</returns>
         [HttpGet("{id}/{subId}/comments")]
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes)]
-        [ProducesResponseType(typeof(ApiResponse<List<CommentResponse>>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<PaginatedCommentResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
-        public async Task<IActionResult> GetChapterComments(Guid id, float subId)
+        public async Task<IActionResult> GetChapterComments(Guid id, float subId, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
+
             try
             {
                 await _supabaseService.InitializeAsync();
@@ -537,14 +541,25 @@ namespace AkariApi.Controllers
                 if (chapter == null)
                     return NotFound(ApiResponse<ErrorData>.Error("Chapter not found", status: 404));
 
-                // Get all comments for this chapter
-                var commentsResponse = await _supabaseService.Client
-                    .From<ChapterCommentDto>()
-                    .Where(c => c.ChapterId == chapter.Id && !c.Deleted)
-                    .Order("created_at", Supabase.Postgrest.Constants.Ordering.Ascending)
-                    .Get();
+                var totalCountResponse = await _supabaseService.Client.Rpc("get_top_level_comment_count", new { p_chapter_id = chapter.Id });
+                var totalCount = string.IsNullOrEmpty(totalCountResponse.Content) ? 0 : JsonSerializer.Deserialize<int>(totalCountResponse.Content);
 
-                var comments = commentsResponse.Models.Select(c => new CommentResponse
+                var response = await _supabaseService.Client.Rpc("get_comments_with_reply_count", new { p_chapter_id = chapter.Id, p_limit = clampedPageSize, p_offset = (clampedPage - 1) * clampedPageSize });
+
+                if (response == null || string.IsNullOrEmpty(response.Content))
+                {
+                    return Ok(ApiResponse<PaginatedCommentResponse>.Success(new PaginatedCommentResponse
+                    {
+                        Items = new List<CommentResponse>(),
+                        TotalItems = 0,
+                        CurrentPage = clampedPage,
+                        PageSize = clampedPageSize
+                    }));
+                }
+
+                var paginatedCommentsDto = JsonSerializer.Deserialize<List<CommentWithReplyCountDto>>(response.Content, _jsonOptions) ?? new List<CommentWithReplyCountDto>();
+
+                var paginatedComments = paginatedCommentsDto.Select(c => new CommentResponse
                 {
                     Id = c.Id,
                     ChapterId = c.ChapterId,
@@ -556,17 +571,17 @@ namespace AkariApi.Controllers
                     Edited = c.Edited,
                     Deleted = c.Deleted,
                     Upvotes = c.Upvotes,
-                    Downvotes = c.Downvotes
+                    Downvotes = c.Downvotes,
+                    ReplyCount = c.ReplyCount
                 }).ToList();
 
-                // Build nested structure
-                var topLevelComments = comments.Where(c => c.ParentId == null).ToList();
-                foreach (var comment in topLevelComments)
+                return Ok(ApiResponse<PaginatedCommentResponse>.Success(new PaginatedCommentResponse
                 {
-                    comment.Replies = GetReplies(comment.Id, comments);
-                }
-
-                return Ok(ApiResponse<List<CommentResponse>>.Success(topLevelComments));
+                    Items = paginatedComments,
+                    TotalItems = totalCount,
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
+                }));
             }
             catch (Exception ex)
             {
@@ -574,14 +589,62 @@ namespace AkariApi.Controllers
             }
         }
 
-        private List<CommentResponse> GetReplies(Guid parentId, List<CommentResponse> allComments)
+        /// <summary>
+        /// Get replies for a specific comment
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <param name="subId">The chapter number.</param>
+        /// <param name="commentId">The unique identifier of the comment.</param>
+        /// <returns>A list of replies for the comment.</returns>
+        [HttpGet("{id}/{subId}/comments/{commentId}/replies")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes)]
+        [ProducesResponseType(typeof(ApiResponse<List<CommentWithRepliesResponse>>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> GetCommentReplies(Guid id, float subId, Guid commentId)
         {
-            var replies = allComments.Where(c => c.ParentId == parentId).ToList();
-            foreach (var reply in replies)
+            try
             {
-                reply.Replies = GetReplies(reply.Id, allComments);
+                await _supabaseService.InitializeAsync();
+
+                // First get the chapter
+                var chapter = await _supabaseService.Client
+                    .From<ChapterDto>()
+                    .Where(c => c.MangaId == id)
+                    .Where(c => c.Number == subId)
+                    .Single();
+
+                if (chapter == null)
+                    return NotFound(ApiResponse<ErrorData>.Error("Chapter not found", status: 404));
+
+                var response = await _supabaseService.Client.Rpc("get_comment_replies_recursive", new { p_comment_id = commentId });
+
+                if (string.IsNullOrEmpty(response.Content))
+                {
+                    return Ok(ApiResponse<List<CommentWithRepliesResponse>>.Success(new List<CommentWithRepliesResponse>()));
+                }
+
+                var allReplies = JsonSerializer.Deserialize<List<CommentWithRepliesResponse>>(response.Content, _jsonOptions) ?? new List<CommentWithRepliesResponse>();
+
+                var replies = BuildReplyTree(allReplies, commentId);
+                return Ok(ApiResponse<List<CommentWithRepliesResponse>>.Success(replies));
             }
-            return replies.OrderBy(c => c.CreatedAt).ToList();
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve comment replies", ex.Message));
+            }
+        }
+
+        private static List<CommentWithRepliesResponse> BuildReplyTree(List<CommentWithRepliesResponse> allReplies, Guid parentId)
+        {
+            var directReplies = allReplies.Where(r => r.ParentId == parentId).ToList();
+
+            foreach (var reply in directReplies)
+            {
+                reply.Replies = BuildReplyTree(allReplies, reply.Id);
+            }
+
+            return directReplies.OrderBy(r => r.CreatedAt).ToList();
         }
 
         /// <summary>
