@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using System.Collections.Generic;
 
 namespace AkariApi.Models
 {
@@ -24,6 +23,7 @@ namespace AkariApi.Models
         public int Upvotes { get; set; }
         public int Downvotes { get; set; }
         public long ReplyCount { get; set; }
+        public UploadResponse? Attachment { get; set; }
     }
 
     public class CreateCommentRequest
@@ -33,6 +33,8 @@ namespace AkariApi.Models
         public string Content { get; set; } = string.Empty;
 
         public Guid? ParentId { get; set; }
+
+        public Guid? AttachmentId { get; set; }
     }
 
     public class UpdateCommentRequest
@@ -73,5 +75,11 @@ namespace AkariApi.Models
         public int Upvotes { get; set; }
         public int Downvotes { get; set; }
         public List<CommentWithRepliesResponse> Replies { get; set; } = new List<CommentWithRepliesResponse>();
+        public UploadResponse? Attachment { get; set; }
+    }
+
+    public class TopCommentWithRepliesResponse : CommentWithRepliesResponse
+    {
+        public long ReplyCount { get; set; }
     }
 }

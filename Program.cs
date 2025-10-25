@@ -53,6 +53,13 @@ builder.Services.AddRateLimiter(_ => _
         options.Window = TimeSpan.FromSeconds(10);
         options.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
         options.QueueLimit = 2;
+    })
+    .AddFixedWindowLimiter(policyName: "uploads", options =>
+    {
+        options.PermitLimit = 1;
+        options.Window = TimeSpan.FromMinutes(1);
+        options.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        options.QueueLimit = 1;
     }));
 
 var supabaseUrl = builder.Configuration["SUPABASE_URL"] ?? Environment.GetEnvironmentVariable("SUPABASE_URL");

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Supabase.Postgrest.Attributes;
 using Supabase.Postgrest.Models;
 
@@ -38,6 +39,9 @@ namespace AkariApi.Models
 
         [Column("downvotes")]
         public int Downvotes { get; set; }
+
+        [Column("attachment_id")]
+        public Guid? AttachmentId { get; set; }
     }
 
     [Table("chapter_comment_votes")]
@@ -53,21 +57,5 @@ namespace AkariApi.Models
 
         [Column("value")]
         public short Value { get; set; }
-    }
-
-    public class CommentWithReplyCountDto
-    {
-        public Guid Id { get; set; }
-        public Guid ChapterId { get; set; }
-        public UserProfile UserProfile { get; set; } = new UserProfile();
-        public Guid? ParentId { get; set; }
-        public string Content { get; set; } = string.Empty;
-        public DateTimeOffset CreatedAt { get; set; }
-        public DateTimeOffset UpdatedAt { get; set; }
-        public bool Edited { get; set; }
-        public bool Deleted { get; set; }
-        public int Upvotes { get; set; }
-        public int Downvotes { get; set; }
-        public long ReplyCount { get; set; }
     }
 }

@@ -558,7 +558,7 @@ namespace AkariApi.Controllers
                     }));
                 }
 
-                var paginatedCommentsDto = JsonSerializer.Deserialize<List<CommentWithReplyCountDto>>(response.Content, _jsonOptions) ?? new List<CommentWithReplyCountDto>();
+                var paginatedCommentsDto = JsonSerializer.Deserialize<List<TopCommentWithRepliesResponse>>(response.Content, _jsonOptions) ?? new List<TopCommentWithRepliesResponse>();
 
                 var paginatedComments = paginatedCommentsDto.Select(c => new CommentResponse
                 {
@@ -573,7 +573,8 @@ namespace AkariApi.Controllers
                     Deleted = c.Deleted,
                     Upvotes = c.Upvotes,
                     Downvotes = c.Downvotes,
-                    ReplyCount = c.ReplyCount
+                    ReplyCount = c.ReplyCount,
+                    Attachment = c.Attachment
                 }).ToList();
 
                 return Ok(ApiResponse<PaginatedCommentResponse>.Success(new PaginatedCommentResponse
@@ -754,7 +755,8 @@ namespace AkariApi.Controllers
                     Edited = false,
                     Deleted = false,
                     Upvotes = 0,
-                    Downvotes = 0
+                    Downvotes = 0,
+                    AttachmentId = request.AttachmentId
                 };
 
                 var response = await _supabaseService.Client.From<ChapterCommentDto>().Insert(comment);
