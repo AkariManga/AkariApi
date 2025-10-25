@@ -59,7 +59,7 @@ namespace AkariApi.Models
     {
         public Guid Id { get; set; }
         public Guid ChapterId { get; set; }
-        public Guid UserId { get; set; }
+        public UserProfile UserProfile { get; set; } = new UserProfile();
         public Guid? ParentId { get; set; }
         public string Content { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }

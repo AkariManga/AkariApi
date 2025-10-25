@@ -563,7 +563,7 @@ namespace AkariApi.Controllers
                 {
                     Id = c.Id,
                     ChapterId = c.ChapterId,
-                    UserId = c.UserId,
+                    UserProfile = c.UserProfile,
                     ParentId = c.ParentId,
                     Content = c.Content,
                     CreatedAt = c.CreatedAt,
@@ -762,11 +762,21 @@ namespace AkariApi.Controllers
                 if (createdComment == null)
                     return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to create comment"));
 
+                var userProfile = await _supabaseService.Client.From<ProfileDto>().Where(p => p.Id == userId).Single();
+
+                if (userProfile == null)
+                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve user profile"));
+
                 var commentResponse = new CommentResponse
                 {
                     Id = createdComment.Id,
                     ChapterId = createdComment.ChapterId,
-                    UserId = createdComment.UserId,
+                    UserProfile = new UserProfile
+                    {
+                        Id = userProfile.Id,
+                        Username = userProfile.UserName,
+                        DisplayName = userProfile.DisplayName
+                    },
                     ParentId = createdComment.ParentId,
                     Content = createdComment.Content,
                     CreatedAt = createdComment.CreatedAt,

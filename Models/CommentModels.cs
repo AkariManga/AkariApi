@@ -3,11 +3,18 @@ using System.Collections.Generic;
 
 namespace AkariApi.Models
 {
+    public class UserProfile
+    {
+        public Guid Id { get; set; }
+        public string Username { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+    }
+
     public class CommentResponse
     {
         public Guid Id { get; set; }
         public Guid ChapterId { get; set; }
-        public Guid UserId { get; set; }
+        public UserProfile UserProfile { get; set; } = new UserProfile();
         public Guid? ParentId { get; set; }
         public string Content { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }
@@ -56,7 +63,7 @@ namespace AkariApi.Models
     {
         public Guid Id { get; set; }
         public Guid ChapterId { get; set; }
-        public Guid UserId { get; set; }
+        public UserProfile UserProfile { get; set; } = new UserProfile();
         public Guid? ParentId { get; set; }
         public string Content { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }
