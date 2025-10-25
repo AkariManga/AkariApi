@@ -933,21 +933,11 @@ namespace AkariApi.Controllers
 
                 if (existingVote != null)
                 {
-                    // Update existing vote
-                    var oldValue = existingVote.Value;
                     existingVote.Value = request.Value;
                     await _supabaseService.Client.From<ChapterCommentVoteDto>().Update(existingVote);
-
-                    // Update comment vote counts
-                    if (oldValue == 1) comment.Upvotes--;
-                    else if (oldValue == -1) comment.Downvotes--;
-
-                    if (request.Value == 1) comment.Upvotes++;
-                    else if (request.Value == -1) comment.Downvotes++;
                 }
                 else
                 {
-                    // New vote
                     var vote = new ChapterCommentVoteDto
                     {
                         CommentId = commentId,
@@ -956,12 +946,7 @@ namespace AkariApi.Controllers
                     };
 
                     await _supabaseService.Client.From<ChapterCommentVoteDto>().Insert(vote);
-
-                    if (request.Value == 1) comment.Upvotes++;
-                    else if (request.Value == -1) comment.Downvotes++;
                 }
-
-                await _supabaseService.Client.From<ChapterCommentDto>().Update(comment);
 
                 return Ok(ApiResponse<string>.Success("Vote recorded successfully"));
             }
