@@ -42,6 +42,12 @@ namespace AkariApi.Models
         public short Value { get; set; }
     }
 
+    public class CommentVoteResponse
+    {
+        public Guid CommentId { get; set; }
+        public short Value { get; set; }
+    }
+
     public class PaginatedCommentResponse : PaginatedResponse<CommentResponse>
     {
     }

@@ -635,6 +635,54 @@ namespace AkariApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Get user's votes on comments in a chapter
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <param name="subId">The chapter number.</param>
+        /// <returns>A list of the user's votes on comments in the chapter.</returns>
+        [HttpGet("{id}/{subId}/comments/votes")]
+        [ProducesResponseType(typeof(ApiResponse<List<CommentVoteResponse>>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [RequireTokenRefresh]
+        public async Task<IActionResult> GetUserCommentVotesInChapter(Guid id, float subId)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+                var chapter = await _supabaseService.Client
+                    .From<ChapterDto>()
+                    .Where(c => c.MangaId == id && c.Number == subId)
+                    .Single();
+
+                if (chapter == null)
+                    return NotFound(ApiResponse<ErrorData>.Error("Chapter not found", status: 404));
+
+                var response = await _supabaseService.Client.Rpc("get_user_comment_votes_in_chapter", new { p_user_id = userId, p_chapter_id = chapter.Id });
+
+                if (string.IsNullOrEmpty(response.Content))
+                {
+                    return Ok(ApiResponse<List<CommentVoteResponse>>.Success(new List<CommentVoteResponse>()));
+                }
+
+                var votes = JsonSerializer.Deserialize<List<CommentVoteResponse>>(response.Content, _jsonOptions) ?? new List<CommentVoteResponse>();
+
+                return Ok(ApiResponse<List<CommentVoteResponse>>.Success(votes));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve user comment votes", ex.Message));
+            }
+        }
+
         private static List<CommentWithRepliesResponse> BuildReplyTree(List<CommentWithRepliesResponse> allReplies, Guid parentId)
         {
             var directReplies = allReplies.Where(r => r.ParentId == parentId).ToList();
