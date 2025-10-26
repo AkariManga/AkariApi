@@ -72,5 +72,9 @@ namespace AkariApi.Models
         public float? LastChapter { get; set; }
 
         public float? NextChapter { get; set; }
+
+        public int? MalId { get; set; }
+
+        public int? AniId { get; set; }
     }
 }
