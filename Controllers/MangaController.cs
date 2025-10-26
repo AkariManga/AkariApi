@@ -26,6 +26,7 @@ namespace AkariApi.Controllers
         /// Get manga list
         /// </summary>
         /// <param name="sortBy">The sort order: 'popular', 'latest', 'newest'.</param>
+        /// <param name="query">Search query string.</param>
         /// <param name="genres">Filter by genres.</param>
         /// <param name="authors">Filter by authors.</param>
         /// <param name="page">The page number.</param>
@@ -37,6 +38,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> GetMangaList(
             [FromQuery] string sortBy = "latest",
+            [FromQuery] string query = "",
             [FromQuery] string[]? genres = null,
             [FromQuery] string[]? authors = null,
             [FromQuery, Range(1, int.MaxValue)] int page = 1,
@@ -56,7 +58,8 @@ namespace AkariApi.Controllers
                     p_offset = offset,
                     p_sort_by = sortBy,
                     p_genres = genres,
-                    p_authors = authors
+                    p_authors = authors,
+                    p_query = query,
                 });
 
                 if (string.IsNullOrEmpty(rpcResponse.Content))
