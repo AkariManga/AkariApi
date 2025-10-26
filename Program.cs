@@ -101,27 +101,11 @@ builder.Services.AddScoped<AkariApi.Services.SupabaseService>();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAkari", policyBuilder =>
+    options.AddPolicy("AllowAny", policyBuilder =>
     {
-        if (builder.Environment.IsDevelopment())
-        {
-            policyBuilder.AllowAnyOrigin()
-                .AllowAnyMethod()
-                .AllowAnyHeader();
-        }
-        else
-        {
-            policyBuilder.SetIsOriginAllowed(origin =>
-            {
-                if (string.IsNullOrEmpty(origin)) return false;
-                var uri = new Uri(origin);
-                var host = uri.Host;
-                return host == "akarimanga.dpdns.org" || host.EndsWith(".akarimanga.dpdns.org");
-            })
+        policyBuilder.AllowAnyOrigin()
             .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
-        }
+            .AllowAnyHeader();
     });
 });
 
