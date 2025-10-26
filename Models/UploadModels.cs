@@ -1,14 +1,24 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AkariApi.Models
 {
     public class UploadResponse
     {
+        [Required]
         public Guid Id { get; set; }
-        public string? UserId { get; set; }
-        public string? Md5Hash { get; set; }
+        [Required]
+        public string UserId { get; set; } = string.Empty;
+        [Required]
+        public string Md5Hash { get; set; } = string.Empty;
+        [Required]
         public long Size { get; set; }
-        public string? Url { get; set; }
+        [Required]
+        public string Url { get; set; } = string.Empty;
+        [Required]
         public int UsageCount { get; set; }
+        [Required]
         public string[] Tags { get; set; } = Array.Empty<string>();
+        [Required]
         public DateTime CreatedAt { get; set; }
     }
 
