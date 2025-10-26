@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AkariApi.Models
 {
     public enum ResultType
@@ -8,8 +10,13 @@ namespace AkariApi.Models
 
     public class ApiResponse<T>
     {
+        [Required]
         public required ResultType Result { get; set; }
+
+        [Required]
         public required int Status { get; set; }
+
+        [Required]
         public required T Data { get; set; }
 
         public static ApiResponse<T> Success(T data, int status = 200)
