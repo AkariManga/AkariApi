@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http;
 using System.Text.Json;
 using AkariApi.Attributes;
+using AkariApi.Helpers;
 using AkariApi.Models;
 
 namespace AkariApi.Middleware
@@ -73,18 +74,8 @@ namespace AkariApi.Middleware
                             var accessExpiration = now.AddSeconds(data.ExpiresIn);
                             var refreshExpiration = now.AddDays(31);
 
-                            context.Response.Cookies.Append("mal_access_token", data.AccessToken, new CookieOptions
-                            {
-                                HttpOnly = true,
-                                Expires = accessExpiration,
-                                Path = "/"
-                            });
-                            context.Response.Cookies.Append("mal_refresh_token", data.RefreshToken, new CookieOptions
-                            {
-                                HttpOnly = true,
-                                Expires = refreshExpiration,
-                                Path = "/"
-                            });
+                            CookieHelper.SetCookie(context.Response, "mal_access_token", data.AccessToken, expires: TimeSpan.FromSeconds(data.ExpiresIn), path: "/");
+                            CookieHelper.SetCookie(context.Response, "mal_refresh_token", data.RefreshToken, expires: TimeSpan.FromDays(31), path: "/");
                         }
                         else
                         {

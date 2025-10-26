@@ -62,20 +62,8 @@ namespace AkariApi.Middleware
                     {
                         context.Items["RefreshedAccessToken"] = newSession.AccessToken;
                         context.Items["RefreshedRefreshToken"] = newSession.RefreshToken;
-                        context.Response.Cookies.Append("accessToken", newSession.AccessToken, new CookieOptions
-                        {
-                            HttpOnly = true,
-                            Secure = true,
-                            SameSite = SameSiteMode.Strict,
-                            Expires = DateTimeOffset.UtcNow.AddDays(365)
-                        });
-                        context.Response.Cookies.Append("refreshToken", newSession.RefreshToken, new CookieOptions
-                        {
-                            HttpOnly = true,
-                            Secure = true,
-                            SameSite = SameSiteMode.Strict,
-                            Expires = DateTimeOffset.UtcNow.AddDays(365)
-                        });
+                        CookieHelper.SetCookie(context.Response, "accessToken", newSession.AccessToken, expires: TimeSpan.FromDays(365));
+                        CookieHelper.SetCookie(context.Response, "refreshToken", newSession.RefreshToken, expires: TimeSpan.FromDays(365));
                     }
                     else
                     {

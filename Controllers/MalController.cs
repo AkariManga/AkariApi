@@ -67,21 +67,9 @@ namespace AkariApi.Controllers
                     return StatusCode(500, ApiResponse<ErrorData>.Error("Invalid response from MAL"));
                 }
                 var now = DateTime.UtcNow;
-                var accessExpiration = now.AddSeconds(data.ExpiresIn);
-                var refreshExpiration = now.AddDays(31);
 
-                Response.Cookies.Append("mal_access_token", data.AccessToken, new CookieOptions
-                {
-                    HttpOnly = true,
-                    Expires = accessExpiration,
-                    Path = "/"
-                });
-                Response.Cookies.Append("mal_refresh_token", data.RefreshToken, new CookieOptions
-                {
-                    HttpOnly = true,
-                    Expires = refreshExpiration,
-                    Path = "/"
-                });
+                CookieHelper.SetCookie(Response, "mal_access_token", data.AccessToken, expires: TimeSpan.FromSeconds(data.ExpiresIn));
+                CookieHelper.SetCookie(Response, "mal_refresh_token", data.RefreshToken, expires: TimeSpan.FromDays(31));
 
                 return Ok(ApiResponse<MalTokenResponse>.Success(data));
             }
