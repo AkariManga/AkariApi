@@ -116,10 +116,10 @@ namespace AkariApi.Controllers
         /// <param name="id">The comment target ID.</param>
         /// <returns>A list of the user's votes on comments in the target.</returns>
         [HttpGet("{id}/votes")]
+        [RequireTokenRefresh]
         [ProducesResponseType(typeof(ApiResponse<List<CommentVoteResponse>>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> GetUserCommentVotes(Guid id)
         {
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
