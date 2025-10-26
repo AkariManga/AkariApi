@@ -127,12 +127,12 @@ namespace AkariApi.Models
 
     public class MangaChapter
     {
-        public Guid Id { get; set; }
-        public string? Title { get; set; }
-        public float Number { get; set; }
-        public short? Pages { get; set; }
-        public DateTimeOffset CreatedAt { get; set; }
-        public DateTimeOffset UpdatedAt { get; set; }
+        public required Guid Id { get; set; }
+        public required string Title { get; set; }
+        public required float Number { get; set; }
+        public required short Pages { get; set; }
+        public required DateTimeOffset CreatedAt { get; set; }
+        public required DateTimeOffset UpdatedAt { get; set; }
     }
 
     public class MangaDetailResponse : MangaResponse
