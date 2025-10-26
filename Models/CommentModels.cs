@@ -4,26 +4,44 @@ namespace AkariApi.Models
 {
     public class UserProfile
     {
+        [Required]
         public Guid Id { get; set; }
+        [Required]
         public string Username { get; set; } = string.Empty;
+        [Required]
         public string DisplayName { get; set; } = string.Empty;
     }
 
-    public class CommentResponse
+    public class BaseCommentResponse
     {
+        [Required]
         public Guid Id { get; set; }
+        [Required]
         public Guid ChapterId { get; set; }
+        [Required]
         public UserProfile UserProfile { get; set; } = new UserProfile();
         public Guid? ParentId { get; set; }
+        [Required]
         public string Content { get; set; } = string.Empty;
+        [Required]
         public DateTimeOffset CreatedAt { get; set; }
+        [Required]
         public DateTimeOffset UpdatedAt { get; set; }
+        [Required]
         public bool Edited { get; set; }
+        [Required]
         public bool Deleted { get; set; }
+        [Required]
         public int Upvotes { get; set; }
+        [Required]
         public int Downvotes { get; set; }
-        public long ReplyCount { get; set; }
         public UploadResponse? Attachment { get; set; }
+    }
+
+    public class CommentResponse : BaseCommentResponse
+    {
+        [Required]
+        public long ReplyCount { get; set; }
     }
 
     public class CreateCommentRequest
@@ -53,7 +71,9 @@ namespace AkariApi.Models
 
     public class CommentVoteResponse
     {
+        [Required]
         public Guid CommentId { get; set; }
+        [Required]
         public short Value { get; set; }
     }
 
@@ -61,25 +81,15 @@ namespace AkariApi.Models
     {
     }
 
-    public class CommentWithRepliesResponse
+    public class CommentWithRepliesResponse : BaseCommentResponse
     {
-        public Guid Id { get; set; }
-        public Guid ChapterId { get; set; }
-        public UserProfile UserProfile { get; set; } = new UserProfile();
-        public Guid? ParentId { get; set; }
-        public string Content { get; set; } = string.Empty;
-        public DateTimeOffset CreatedAt { get; set; }
-        public DateTimeOffset UpdatedAt { get; set; }
-        public bool Edited { get; set; }
-        public bool Deleted { get; set; }
-        public int Upvotes { get; set; }
-        public int Downvotes { get; set; }
+        [Required]
         public List<CommentWithRepliesResponse> Replies { get; set; } = new List<CommentWithRepliesResponse>();
-        public UploadResponse? Attachment { get; set; }
     }
 
     public class TopCommentWithRepliesResponse : CommentWithRepliesResponse
     {
+        [Required]
         public long ReplyCount { get; set; }
     }
 }
