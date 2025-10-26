@@ -35,4 +35,44 @@ namespace AkariApi.Models
         public required List<string> Tags { get; set; }
         public required string Comments { get; set; }
     }
+
+    public class MalMangaListResponse
+    {
+        public required List<MalMangaListItem> Data { get; set; }
+        public required MalPaging Paging { get; set; }
+    }
+
+    public class MalMangaListItem
+    {
+        public required MalMangaNode Node { get; set; }
+        public required MalListStatus ListStatus { get; set; }
+    }
+
+    public class MalMangaNode
+    {
+        public required int Id { get; set; }
+        public required string Title { get; set; }
+        public required MalMainPicture MainPicture { get; set; }
+    }
+
+    public class MalMainPicture
+    {
+        public required string Medium { get; set; }
+        public required string Large { get; set; }
+    }
+
+    public class MalListStatus
+    {
+        public required string Status { get; set; }
+        public required bool IsRereading { get; set; }
+        public required int NumVolumesRead { get; set; }
+        public required int NumChaptersRead { get; set; }
+        public required int Score { get; set; }
+        public required string UpdatedAt { get; set; }
+    }
+
+    public class MalPaging
+    {
+        public string? Next { get; set; }
+    }
 }
