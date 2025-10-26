@@ -123,7 +123,7 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/swagger/v2/swagger.json", "AkariApi v2");
 });
 
-app.UseCors("AllowAkari");
+app.UseCors("AllowAny");
 
 app.UseRateLimiter();
 
