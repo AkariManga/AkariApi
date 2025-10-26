@@ -84,7 +84,7 @@ namespace AkariApi.Controllers
         /// <param name="request">The signin request containing email and password.</param>
         /// <returns>The signin response.</returns>
         [HttpPost("signin")]
-        [ProducesResponseType(typeof(ApiResponse<Session>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<UserResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         public async Task<IActionResult> SignIn([FromBody] SignInRequest request)
@@ -105,6 +105,34 @@ namespace AkariApi.Controllers
                     return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign in", "Authentication returned null"));
                 }
 
+                if (session.User == null || string.IsNullOrEmpty(session.User.Id))
+                {
+                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign in", "User ID not found in session"));
+                }
+
+                if (!Guid.TryParse(session.User.Id, out var userId))
+                {
+                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign in", "Invalid user ID format"));
+                }
+
+                // Fetch user profile from profiles table
+                var profile = await _supabaseService.Client
+                    .From<ProfileDto>()
+                    .Where(p => p.Id == userId)
+                    .Single();
+
+                if (profile == null)
+                {
+                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign in", "Profile not found"));
+                }
+
+                var userResponse = new UserResponse
+                {
+                    UserId = profile.Id,
+                    Username = profile.Username,
+                    DisplayName = profile.DisplayName
+                };
+
                 if (!string.IsNullOrEmpty(session.AccessToken))
                 {
                     Response.Cookies.Append("accessToken", session.AccessToken, new CookieOptions { HttpOnly = true, Secure = true, Expires = DateTimeOffset.UtcNow.AddDays(365) });
@@ -114,7 +142,7 @@ namespace AkariApi.Controllers
                     }
                 }
 
-                return Ok(ApiResponse<Session>.Success(session));
+                return Ok(ApiResponse<UserResponse>.Success(userResponse));
             }
             catch (Exception ex)
             {
@@ -155,7 +183,7 @@ namespace AkariApi.Controllers
         /// <returns>The user information.</returns>
         [HttpGet("me")]
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
-        [ProducesResponseType(typeof(ApiResponse<User>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<UserResponse>), 200)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
         [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
         [RequireTokenRefresh]
@@ -175,7 +203,36 @@ namespace AkariApi.Controllers
                 {
                     return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Invalid token"));
                 }
-                return Ok(ApiResponse<User>.Success(user));
+
+                if (string.IsNullOrEmpty(user.Id))
+                {
+                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "User ID not found"));
+                }
+
+                if (!Guid.TryParse(user.Id, out var userId))
+                {
+                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Invalid user ID format"));
+                }
+
+                // Fetch user profile from profiles table
+                var profile = await _supabaseService.Client
+                    .From<ProfileDto>()
+                    .Where(p => p.Id == userId)
+                    .Single();
+
+                if (profile == null)
+                {
+                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Profile not found"));
+                }
+
+                var userResponse = new UserResponse
+                {
+                    UserId = profile.Id,
+                    Username = profile.Username,
+                    DisplayName = profile.DisplayName
+                };
+
+                return Ok(ApiResponse<UserResponse>.Success(userResponse));
             }
             catch (Exception ex)
             {
