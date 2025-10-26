@@ -21,7 +21,7 @@ namespace AkariApi.Helpers
                 Secure = !isDevelopment,
                 SameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.Strict,
                 Path = path,
-                Domain = isDevelopment ? "localhost" : "api.akarimanga.dpdns.org",
+                Domain = isDevelopment ? null : ".akarimanga.dpdns.org",
                 Expires = expires.HasValue ? DateTimeOffset.UtcNow.Add(expires.Value) : (DateTimeOffset?)null
             };
             response.Cookies.Append(name, value, options);

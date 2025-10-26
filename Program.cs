@@ -101,11 +101,28 @@ builder.Services.AddScoped<AkariApi.Services.SupabaseService>();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAny", policyBuilder =>
+    options.AddPolicy("AllowAkari", policyBuilder =>
     {
-        policyBuilder.AllowAnyOrigin()
+        if (builder.Environment.IsDevelopment())
+        {
+            policyBuilder.WithOrigins("http://localhost:3000")
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials();
+        }
+        else
+        {
+            policyBuilder.SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrEmpty(origin)) return false;
+                var uri = new Uri(origin);
+                var host = uri.Host;
+                return host == "akarimanga.dpdns.org" || host.EndsWith(".akarimanga.dpdns.org");
+            })
             .AllowAnyMethod()
-            .AllowAnyHeader();
+            .AllowAnyHeader()
+            .AllowCredentials();
+        }
     });
 });
 
@@ -123,7 +140,7 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/swagger/v2/swagger.json", "AkariApi v2");
 });
 
-app.UseCors("AllowAny");
+app.UseCors("AllowAkari");
 
 app.UseRateLimiter();
 
