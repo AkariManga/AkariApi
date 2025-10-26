@@ -1,17 +1,19 @@
-using System.Runtime.InteropServices;
 using Supabase.Postgrest.Attributes;
 using Supabase.Postgrest.Models;
 
 namespace AkariApi.Models
 {
-    [Table("chapter_comments")]
-    public class ChapterCommentDto : BaseModel
+    [Table("comments")]
+    public class CommentDto : BaseModel
     {
         [PrimaryKey("id")]
         public Guid Id { get; set; } = Guid.NewGuid();
 
-        [Column("chapter_id")]
-        public Guid ChapterId { get; set; }
+        [Column("target_type")]
+        public string TargetType { get; set; } = string.Empty;
+
+        [Column("target_id")]
+        public Guid TargetId { get; set; }
 
         [Column("user_id")]
         public Guid UserId { get; set; }
@@ -42,10 +44,14 @@ namespace AkariApi.Models
 
         [Column("attachment_id")]
         public Guid? AttachmentId { get; set; }
+
+        public ProfileDto Profiles { get; set; } = new ProfileDto();
+
+        public UploadDto Uploads { get; set; } = new UploadDto();
     }
 
-    [Table("chapter_comment_votes")]
-    public class ChapterCommentVoteDto : BaseModel
+    [Table("comment_votes")]
+    public class CommentVoteDto : BaseModel
     {
         [PrimaryKey("comment_id")]
         [Column("comment_id")]
@@ -57,5 +63,7 @@ namespace AkariApi.Models
 
         [Column("value")]
         public short Value { get; set; }
+
+        public CommentDto Comments { get; set; } = new CommentDto();
     }
 }

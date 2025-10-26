@@ -17,7 +17,9 @@ namespace AkariApi.Models
         [Required]
         public Guid Id { get; set; }
         [Required]
-        public Guid ChapterId { get; set; }
+        public string TargetType { get; set; } = string.Empty;
+        [Required]
+        public Guid TargetId { get; set; }
         [Required]
         public UserProfile UserProfile { get; set; } = new UserProfile();
         public Guid? ParentId { get; set; }
@@ -46,6 +48,9 @@ namespace AkariApi.Models
 
     public class CreateCommentRequest
     {
+        [Required]
+        public string TargetType { get; set; } = string.Empty;
+
         [Required]
         [StringLength(1000, MinimumLength = 1)]
         public string Content { get; set; } = string.Empty;
