@@ -32,7 +32,14 @@ builder.Services.AddSwaggerGen(options =>
         In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
         Name = "accessToken",
     });
+    options.AddSecurityDefinition("MalCookieAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
+        Name = "mal_access_token",
+    });
     options.OperationFilter<AkariApi.Filters.AuthorizeCheckOperationFilter>();
+    options.OperationFilter<AkariApi.Filters.MalAuthorizeCheckOperationFilter>();
     options.OperationFilter<AkariApi.Filters.RemoveExtraContentTypesOperationFilter>();
 });
 
@@ -94,18 +101,27 @@ builder.Services.AddScoped<AkariApi.Services.SupabaseService>();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAkari", builder =>
+    options.AddPolicy("AllowAkari", policyBuilder =>
     {
-        builder.SetIsOriginAllowed(origin =>
+        if (builder.Environment.IsDevelopment())
         {
-            if (string.IsNullOrEmpty(origin)) return false;
-            var uri = new Uri(origin);
-            var host = uri.Host;
-            return host == "akarimanga.dpdns.org" || host.EndsWith(".akarimanga.dpdns.org");
-        })
-        .AllowAnyMethod()
-        .AllowAnyHeader()
-        .AllowCredentials();
+            policyBuilder.AllowAnyOrigin()
+                .AllowAnyMethod()
+                .AllowAnyHeader();
+        }
+        else
+        {
+            policyBuilder.SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrEmpty(origin)) return false;
+                var uri = new Uri(origin);
+                var host = uri.Host;
+                return host == "akarimanga.dpdns.org" || host.EndsWith(".akarimanga.dpdns.org");
+            })
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
+        }
     });
 });
 
@@ -128,6 +144,7 @@ app.UseCors("AllowAkari");
 app.UseRateLimiter();
 
 app.UseMiddleware<AkariApi.Middleware.TokenRefreshMiddleware>();
+app.UseMiddleware<AkariApi.Middleware.MalTokenRefreshMiddleware>();
 
 app.UseAuthorization();
 
