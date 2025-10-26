@@ -47,7 +47,6 @@ namespace AkariApi.Controllers
                     .Where(c => c.ParentId == null)
                     .Where(c => c.TargetId == id)
                     .Count(Supabase.Postgrest.Constants.CountType.Exact);
-                var offset = (clampedPage - 1) * clampedPageSize;
 
                 if (totalCount == 0)
                 {
@@ -55,45 +54,51 @@ namespace AkariApi.Controllers
                 }
 
                 var response = await _supabaseService.Client
-                    .From<CommentDto>()
-                    .Where(c => c.ParentId == null)
-                    .Where(c => c.TargetId == id)
-                    .Select("*, profiles(*), uploads(*), (upvotes - downvotes) as score")
-                    .Order("score", Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Offset(offset)
-                    .Limit(clampedPageSize)
-                    .Get();
+                    .Rpc("get_comments_for_target", new { target_id = id, page_number = clampedPage, page_size = clampedPageSize });
 
-                var comments = response.Models.Select(c => new CommentResponse
+                if (string.IsNullOrEmpty(response.Content))
                 {
-                    Id = c.Id,
-                    TargetType = c.TargetType,
-                    TargetId = c.TargetId,
+                    return Ok(ApiResponse<PaginatedCommentResponse>.Success(new PaginatedCommentResponse
+                    {
+                        Items = new List<CommentResponse>(),
+                        TotalItems = totalCount,
+                        CurrentPage = clampedPage,
+                        PageSize = clampedPageSize
+                    }));
+                }
+
+                var commentsData = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(response.Content, _jsonOptions) ?? new List<Dictionary<string, JsonElement>>();
+
+                var comments = commentsData.Select(c => new CommentResponse
+                {
+                    Id = c["id"].GetGuid(),
+                    TargetType = c["target_type"].GetString() ?? "",
+                    TargetId = c["target_id"].GetGuid(),
                     UserProfile = new UserProfile
                     {
-                        Id = c.UserId,
-                        Username = c.Profiles.Username,
-                        DisplayName = c.Profiles.DisplayName,
+                        Id = c["user_id"].GetGuid(),
+                        Username = c["username"].GetString() ?? "",
+                        DisplayName = c["display_name"].GetString() ?? "",
                     },
-                    ParentId = c.ParentId,
-                    Content = c.Content,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt,
-                    Edited = c.Edited,
-                    Deleted = c.Deleted,
-                    Upvotes = c.Upvotes,
-                    Downvotes = c.Downvotes,
-                    Attachment = new UploadResponse
+                    ParentId = c["parent_id"].ValueKind != JsonValueKind.Null ? c["parent_id"].GetGuid() : (Guid?)null,
+                    Content = c["content"].GetString() ?? "",
+                    CreatedAt = c["created_at"].GetDateTimeOffset(),
+                    UpdatedAt = c["updated_at"].GetDateTimeOffset(),
+                    Edited = c["edited"].GetBoolean(),
+                    Deleted = c["deleted"].GetBoolean(),
+                    Upvotes = c["upvotes"].GetInt32(),
+                    Downvotes = c["downvotes"].GetInt32(),
+                    Attachment = c["upload_id"].ValueKind != JsonValueKind.Null ? new UploadResponse
                     {
-                        Id = c.Uploads.Id,
-                        UserId = c.Uploads.UserId,
-                        Md5Hash = c.Uploads.Md5Hash,
-                        Size = c.Uploads.Size,
-                        Url = c.Uploads.Url,
-                        UsageCount = c.Uploads.UsageCount,
-                        Tags = c.Uploads.Tags,
-                        CreatedAt = c.Uploads.CreatedAt
-                    },
+                        Id = c["upload_id"].GetGuid(),
+                        UserId = c["upload_user_id"].GetGuid().ToString(),
+                        Md5Hash = c["upload_md5_hash"].GetString() ?? "",
+                        Size = c["upload_size"].GetInt64(),
+                        Url = c["upload_url"].GetString() ?? "",
+                        UsageCount = c["upload_usage_count"].GetInt32(),
+                        Tags = c["upload_tags"].EnumerateArray().Select(x => x.GetString() ?? "").ToArray(),
+                        CreatedAt = c["upload_created_at"].GetDateTimeOffset().DateTime
+                    } : null,
                 }).ToList();
 
                 return Ok(ApiResponse<PaginatedCommentResponse>.Success(new PaginatedCommentResponse
@@ -133,17 +138,14 @@ namespace AkariApi.Controllers
                 await _supabaseService.InitializeAsync();
 
                 var response = await _supabaseService.Client
-                    .From<CommentVoteDto>()
-                    .Where(cv => cv.UserId == userId)
-                    .Select("comment_id, value, comments!inner(target_id)")
-                    .Where(cv => cv.Comments.TargetId == id)
-                    .Get();
+                    .Rpc("get_user_comment_votes_by_target", new { user_id = userId, target_id = id });
 
-                var votes = response.Models.Select(cv => new CommentVoteResponse
+                if (string.IsNullOrEmpty(response.Content))
                 {
-                    CommentId = cv.CommentId,
-                    Value = cv.Value
-                }).ToList();
+                    return Ok(ApiResponse<List<CommentVoteResponse>>.Success(new List<CommentVoteResponse>()));
+                }
+
+                var votes = JsonSerializer.Deserialize<List<CommentVoteResponse>>(response.Content, _jsonOptions) ?? new List<CommentVoteResponse>();
 
                 return Ok(ApiResponse<List<CommentVoteResponse>>.Success(votes));
             }
@@ -337,10 +339,10 @@ namespace AkariApi.Controllers
                         attachment = new UploadResponse
                         {
                             Id = upload.Id,
-                            UserId = upload.UserId,
-                            Md5Hash = upload.Md5Hash,
+                            UserId = upload.UserId ?? "",
+                            Md5Hash = upload.Md5Hash ?? "",
                             Size = upload.Size,
-                            Url = upload.Url,
+                            Url = upload.Url ?? "",
                             UsageCount = upload.UsageCount,
                             Tags = upload.Tags,
                             CreatedAt = upload.CreatedAt

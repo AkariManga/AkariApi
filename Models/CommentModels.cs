@@ -80,6 +80,8 @@ namespace AkariApi.Models
         public Guid CommentId { get; set; }
         [Required]
         public short Value { get; set; }
+        [Required]
+        public Guid TargetId { get; set; }
     }
 
     public class PaginatedCommentResponse : PaginatedResponse<CommentResponse>

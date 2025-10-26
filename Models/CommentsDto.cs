@@ -44,10 +44,6 @@ namespace AkariApi.Models
 
         [Column("attachment_id")]
         public Guid? AttachmentId { get; set; }
-
-        public ProfileDto Profiles { get; set; } = new ProfileDto();
-
-        public UploadDto Uploads { get; set; } = new UploadDto();
     }
 
     [Table("comment_votes")]
@@ -63,7 +59,5 @@ namespace AkariApi.Models
 
         [Column("value")]
         public short Value { get; set; }
-
-        public CommentDto Comments { get; set; } = new CommentDto();
     }
 }
