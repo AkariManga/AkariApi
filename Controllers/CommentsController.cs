@@ -88,6 +88,7 @@ namespace AkariApi.Controllers
                     Deleted = c["deleted"].GetBoolean(),
                     Upvotes = c["upvotes"].GetInt32(),
                     Downvotes = c["downvotes"].GetInt32(),
+                    ReplyCount = c["reply_count"].GetInt64(),
                     Attachment = c["upload_id"].ValueKind != JsonValueKind.Null ? new UploadResponse
                     {
                         Id = c["upload_id"].GetGuid(),
@@ -242,24 +243,36 @@ namespace AkariApi.Controllers
                     .Where(v => v.CommentId == commentId && v.UserId == userId)
                     .Single();
 
-                if (existingVote != null)
+                if (request.Value == 0)
                 {
-                    existingVote.Value = request.Value;
-                    await _supabaseService.Client.From<CommentVoteDto>().Update(existingVote);
+                    // Remove the vote if it exists
+                    if (existingVote != null)
+                    {
+                        await _supabaseService.Client.From<CommentVoteDto>().Delete(existingVote);
+                    }
+                    return Ok(ApiResponse<string>.Success("Vote removed successfully"));
                 }
                 else
                 {
-                    var vote = new CommentVoteDto
+                    // Insert or update the vote
+                    if (existingVote != null)
                     {
-                        CommentId = commentId,
-                        UserId = userId,
-                        Value = request.Value
-                    };
+                        existingVote.Value = request.Value;
+                        await _supabaseService.Client.From<CommentVoteDto>().Update(existingVote);
+                    }
+                    else
+                    {
+                        var vote = new CommentVoteDto
+                        {
+                            CommentId = commentId,
+                            UserId = userId,
+                            Value = request.Value
+                        };
 
-                    await _supabaseService.Client.From<CommentVoteDto>().Insert(vote);
+                        await _supabaseService.Client.From<CommentVoteDto>().Insert(vote);
+                    }
+                    return Ok(ApiResponse<string>.Success("Vote recorded successfully"));
                 }
-
-                return Ok(ApiResponse<string>.Success("Vote recorded successfully"));
             }
             catch (Exception ex)
             {
@@ -301,6 +314,8 @@ namespace AkariApi.Controllers
 
                     if (parentComment == null)
                         return BadRequest(ApiResponse<ErrorData>.Error("Invalid parent comment"));
+                    if (parentComment.Deleted)
+                        return BadRequest(ApiResponse<ErrorData>.Error("Cannot reply to a deleted comment"));
                 }
 
                 var comment = new CommentDto
