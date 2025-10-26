@@ -249,6 +249,47 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Get chapters for a manga
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <returns>A list of chapters for the manga.</returns>
+        [HttpGet("{id}/chapters")]
+        [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
+        [ProducesResponseType(typeof(ApiResponse<List<MangaChapter>>), 200)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
+        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        public async Task<IActionResult> GetMangaChapters(Guid id)
+        {
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var response = await _supabaseService.Client
+                    .From<ChapterDto>()
+                    .Where(c => c.MangaId == id)
+                    .Select("*")
+                    .Get();
+
+                var sortedChapters = response.Models.OrderBy(c => c.Number).ToList();
+                var chapters = sortedChapters.Select(c => new MangaChapter
+                {
+                    Id = c.Id,
+                    Title = c.Title,
+                    Number = c.Number,
+                    Pages = c.Pages,
+                    UpdatedAt = c.UpdatedAt,
+                    CreatedAt = c.CreatedAt,
+                }).ToList();
+
+                return Ok(ApiResponse<List<MangaChapter>>.Success(chapters));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve chapters", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Update manga views
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
