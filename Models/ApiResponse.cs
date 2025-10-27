@@ -56,10 +56,15 @@ namespace AkariApi.Models
 
     public class PaginatedResponse<T>
     {
+        [Required]
         public List<T> Items { get; set; } = new List<T>();
+        [Required]
         public int TotalItems { get; set; }
+        [Required]
         public int CurrentPage { get; set; }
+        [Required]
         public int PageSize { get; set; }
+        [Required]
         public int TotalPages => (int)Math.Ceiling((double)TotalItems / PageSize);
     }
 }

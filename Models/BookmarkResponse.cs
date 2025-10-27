@@ -1,39 +1,64 @@
 using System.Text.Json.Serialization;
+using System.ComponentModel.DataAnnotations;
 
 namespace AkariApi.Models
 {
     public class BookmarkChapter
     {
+        [Required]
         public Guid Id { get; set; }
+        [Required]
         public float Number { get; set; }
-        public string? Title { get; set; }
-        public short? Pages { get; set; }
+        [Required]
+        public string Title { get; set; } = string.Empty;
+        [Required]
+        public short Pages { get; set; }
+        [Required]
         public DateTimeOffset CreatedAt { get; set; }
+        [Required]
         public DateTimeOffset UpdatedAt { get; set; }
     }
 
     public class BookmarkResponse
     {
+        [Required]
         public Guid BookmarkId { get; set; }
+        [Required]
         public DateTimeOffset BookmarkCreatedAt { get; set; }
+        [Required]
         public DateTimeOffset BookmarkUpdatedAt { get; set; }
+        [Required]
         public Guid MangaId { get; set; }
+        [Required]
         public string Title { get; set; } = string.Empty;
+        [Required]
         public string Cover { get; set; } = string.Empty;
+        [Required]
         public string Description { get; set; } = string.Empty;
+        [Required]
         public string Status { get; set; } = string.Empty;
+        [Required]
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public MangaType Type { get; set; }
+        [Required]
         public string[] Authors { get; set; } = Array.Empty<string>();
+        [Required]
         public string[] Genres { get; set; } = Array.Empty<string>();
+        [Required]
         public int Views { get; set; } = 0;
+        [Required]
         public decimal Score { get; set; } = 0;
         public int? MalId { get; set; }
         public int? AniId { get; set; }
-        public string[]? AlternativeTitles { get; set; }
+        [Required]
+        public string[] AlternativeTitles { get; set; } = Array.Empty<string>();
+        [Required]
         public DateTimeOffset MangaCreatedAt { get; set; }
+        [Required]
         public DateTimeOffset MangaUpdatedAt { get; set; }
+        [Required]
         public BookmarkChapter LastReadChapter { get; set; } = new BookmarkChapter();
+        [Required]
         public List<BookmarkChapter> Chapters { get; set; } = new List<BookmarkChapter>();
     }
 
