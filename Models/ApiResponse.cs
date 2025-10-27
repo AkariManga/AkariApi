@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace AkariApi.Models
 {
@@ -8,30 +9,43 @@ namespace AkariApi.Models
         Error,
     }
 
-    public class ApiResponse<T>
+    [JsonPolymorphic(TypeDiscriminatorPropertyName = "result")]
+    [JsonDerivedType(typeof(SuccessResponse<>), "Success")]
+    [JsonDerivedType(typeof(ErrorResponse), "Error")]
+    public abstract class ApiResponse
     {
         [Required]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
         public required ResultType Result { get; set; }
 
         [Required]
         public required int Status { get; set; }
+    }
 
+    public class SuccessResponse<T> : ApiResponse
+    {
         [Required]
         public required T Data { get; set; }
 
-        public static ApiResponse<T> Success(T data, int status = 200)
+        public static SuccessResponse<T> Create(T data, int status = 200)
         {
-            return new ApiResponse<T>
+            return new SuccessResponse<T>
             {
                 Result = ResultType.Success,
                 Status = status,
                 Data = data
             };
         }
+    }
 
-        public static ApiResponse<ErrorData> Error(string message, object? details = null, int status = 500)
+    public class ErrorResponse : ApiResponse
+    {
+        [Required]
+        public required ErrorData Data { get; set; }
+
+        public static ErrorResponse Create(string message, object? details = null, int status = 500)
         {
-            return new ApiResponse<ErrorData>
+            return new ErrorResponse
             {
                 Result = ResultType.Error,
                 Status = status,

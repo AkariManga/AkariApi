@@ -30,9 +30,9 @@ namespace AkariApi.Controllers
         /// <returns>A paginated list of manga.</returns>
         [HttpGet("{name}")]
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes)]
-        [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaListResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetGenreByName(string name, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
@@ -79,7 +79,7 @@ namespace AkariApi.Controllers
                     UpdatedAt = m.UpdatedAt,
                 }).ToList();
 
-                return Ok(ApiResponse<MangaListResponse>.Success(new MangaListResponse
+                return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                 {
                     Items = mangaList,
                     TotalItems = totalCount,
@@ -89,7 +89,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve latest manga", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve latest manga", ex.Message));
             }
         }
     }

@@ -30,8 +30,8 @@ namespace AkariApi.Controllers
         /// <returns>A paginated list of the user's manga lists.</returns>
         [HttpGet("user/{userId}")]
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
-        [ProducesResponseType(typeof(ApiResponse<UserMangaListPaginatedResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<UserMangaListPaginatedResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         [OptionalTokenRefresh]
         public async Task<IActionResult> GetUserLists(Guid userId, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
@@ -68,7 +68,7 @@ namespace AkariApi.Controllers
                     UpdatedAt = l.UpdatedAt
                 }).ToList();
 
-                return Ok(ApiResponse<UserMangaListPaginatedResponse>.Success(new UserMangaListPaginatedResponse
+                return Ok(SuccessResponse<UserMangaListPaginatedResponse>.Create(new UserMangaListPaginatedResponse
                 {
                     Items = lists,
                     TotalItems = totalCount,
@@ -78,7 +78,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve user lists", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve user lists", ex.Message));
             }
         }
 
@@ -89,9 +89,9 @@ namespace AkariApi.Controllers
         /// <returns>The manga list with all its entries.</returns>
         [HttpGet("{id}")]
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
-        [ProducesResponseType(typeof(ApiResponse<UserMangaListWithEntriesResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<UserMangaListWithEntriesResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         [OptionalTokenRefresh]
         public async Task<IActionResult> GetListWithEntries(Guid id)
         {
@@ -107,7 +107,7 @@ namespace AkariApi.Controllers
 
                 if (!listResponse.Models.Any())
                 {
-                    return NotFound(ApiResponse<ErrorData>.Error("Not found", "List not found or access denied"));
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
                 }
 
                 var list = listResponse.Models.First();
@@ -142,11 +142,11 @@ namespace AkariApi.Controllers
                     Entries = entries
                 };
 
-                return Ok(ApiResponse<UserMangaListWithEntriesResponse>.Success(result));
+                return Ok(SuccessResponse<UserMangaListWithEntriesResponse>.Create(result));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve list", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve list", ex.Message));
             }
         }
 
@@ -158,9 +158,9 @@ namespace AkariApi.Controllers
         /// <returns>A paginated list of the user's manga lists.</returns>
         [HttpGet("user/me")]
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
-        [ProducesResponseType(typeof(ApiResponse<UserMangaListPaginatedResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<UserMangaListPaginatedResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         [RequireTokenRefresh]
         public async Task<IActionResult> GetMyLists([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
@@ -173,7 +173,7 @@ namespace AkariApi.Controllers
                 var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(error))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
                 }
 
                 var totalCount = await _supabaseService.Client
@@ -203,7 +203,7 @@ namespace AkariApi.Controllers
                     UpdatedAt = l.UpdatedAt
                 }).ToList();
 
-                return Ok(ApiResponse<UserMangaListPaginatedResponse>.Success(new UserMangaListPaginatedResponse
+                return Ok(SuccessResponse<UserMangaListPaginatedResponse>.Create(new UserMangaListPaginatedResponse
                 {
                     Items = lists,
                     TotalItems = totalCount,
@@ -213,7 +213,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve user lists", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve user lists", ex.Message));
             }
         }
 
@@ -223,16 +223,16 @@ namespace AkariApi.Controllers
         /// <param name="request">The create list request.</param>
         /// <returns>The created manga list.</returns>
         [HttpPost]
-        [ProducesResponseType(typeof(ApiResponse<UserMangaListResponse>), 201)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<UserMangaListResponse>), 201)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         [RequireTokenRefresh]
         public async Task<IActionResult> CreateList([FromBody] CreateUserMangaListRequest request)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
             }
 
             try
@@ -242,7 +242,7 @@ namespace AkariApi.Controllers
                 var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(error))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
                 }
 
                 var dto = new UserMangaListDto
@@ -272,11 +272,11 @@ namespace AkariApi.Controllers
                     UpdatedAt = createdList.UpdatedAt
                 };
 
-                return CreatedAtAction(nameof(GetListWithEntries), new { id = result.Id }, ApiResponse<UserMangaListResponse>.Success(result));
+                return CreatedAtAction(nameof(GetListWithEntries), new { id = result.Id }, SuccessResponse<UserMangaListResponse>.Create(result));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to create list", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to create list", ex.Message));
             }
         }
 
@@ -287,17 +287,17 @@ namespace AkariApi.Controllers
         /// <param name="request">The create entry request (manga id).</param>
         /// <returns>The created list entry.</returns>
         [HttpPost("{id}")]
-        [ProducesResponseType(typeof(ApiResponse<UserMangaListEntryResponse>), 201)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<UserMangaListEntryResponse>), 201)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         [RequireTokenRefresh]
         public async Task<IActionResult> AddEntryToList(Guid id, [FromBody] CreateUserMangaListEntryRequest request)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
             }
 
             try
@@ -307,7 +307,7 @@ namespace AkariApi.Controllers
                 var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(error))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
                 }
 
                 var listResp = await _supabaseService.Client
@@ -318,7 +318,7 @@ namespace AkariApi.Controllers
 
                 if (!listResp.Models.Any())
                 {
-                    return NotFound(ApiResponse<ErrorData>.Error("Not found", "List not found or access denied"));
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
                 }
 
                 // Compute next order index (max + 1)
@@ -361,7 +361,7 @@ namespace AkariApi.Controllers
                     UpdatedAt = created.UpdatedAt
                 };
 
-                return CreatedAtAction(nameof(GetListWithEntries), new { id }, ApiResponse<UserMangaListEntryResponse>.Success(result));
+                return CreatedAtAction(nameof(GetListWithEntries), new { id }, SuccessResponse<UserMangaListEntryResponse>.Create(result));
             }
             catch (PostgrestException ex) when (ex.Message.Contains("duplicate key") || ex.Message.Contains("23505"))
             {
@@ -385,17 +385,17 @@ namespace AkariApi.Controllers
                         UpdatedAt = existing.UpdatedAt
                     };
 
-                    return Ok(ApiResponse<UserMangaListEntryResponse>.Success(result));
+                    return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(result));
                 }
                 else
                 {
                     // Should not happen, but fallback
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to add entry", "Unexpected error occurred"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to add entry", "Unexpected error occurred"));
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to add entry", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to add entry", ex.Message));
             }
         }
 
@@ -406,10 +406,10 @@ namespace AkariApi.Controllers
         /// <param name="entryId">The entry ID.</param>
         /// <returns>Success message on deletion.</returns>
         [HttpDelete("{id}/{entryId}")]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         [RequireTokenRefresh]
         public async Task<IActionResult> RemoveEntryFromList(Guid id, Guid entryId)
         {
@@ -420,7 +420,7 @@ namespace AkariApi.Controllers
                 var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(error))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
                 }
 
                 var listResp = await _supabaseService.Client
@@ -431,7 +431,7 @@ namespace AkariApi.Controllers
 
                 if (!listResp.Models.Any())
                 {
-                    return NotFound(ApiResponse<ErrorData>.Error("Not found", "List not found or access denied"));
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
                 }
 
                 // Verify entry exists and belongs to this list
@@ -443,7 +443,7 @@ namespace AkariApi.Controllers
 
                 if (!entryResp.Models.Any())
                 {
-                    return NotFound(ApiResponse<ErrorData>.Error("Not found", "Entry not found or does not belong to this list"));
+                    return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list"));
                 }
 
                 await _supabaseService.Client
@@ -451,11 +451,11 @@ namespace AkariApi.Controllers
                     .Where(e => e.Id == entryId)
                     .Delete();
 
-                return Ok(ApiResponse<string>.Success("Entry removed successfully"));
+                return Ok(SuccessResponse<string>.Create("Entry removed successfully"));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to remove entry", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to remove entry", ex.Message));
             }
         }
 
@@ -467,17 +467,17 @@ namespace AkariApi.Controllers
         /// <param name="request">The update request with the new order index.</param>
         /// <returns>The updated entry.</returns>
         [HttpPut("{id}/{entryId}")]
-        [ProducesResponseType(typeof(ApiResponse<UserMangaListEntryResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<UserMangaListEntryResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         [RequireTokenRefresh]
         public async Task<IActionResult> UpdateEntryOrder(Guid id, Guid entryId, [FromBody] UpdateUserMangaListEntryRequest request)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
             }
 
             try
@@ -487,7 +487,7 @@ namespace AkariApi.Controllers
                 var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(error))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
                 }
 
                 // Check if list exists and belongs to user
@@ -499,7 +499,7 @@ namespace AkariApi.Controllers
 
                 if (!listResp.Models.Any())
                 {
-                    return NotFound(ApiResponse<ErrorData>.Error("Not found", "List not found or access denied"));
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
                 }
 
                 // Check if entry exists and belongs to this list
@@ -511,7 +511,7 @@ namespace AkariApi.Controllers
 
                 if (!entryResp.Models.Any())
                 {
-                    return NotFound(ApiResponse<ErrorData>.Error("Not found", "Entry not found or does not belong to this list"));
+                    return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list"));
                 }
 
                 var entry = entryResp.Models.First();
@@ -530,7 +530,7 @@ namespace AkariApi.Controllers
                         CreatedAt = entry.CreatedAt,
                         UpdatedAt = entry.UpdatedAt
                     };
-                    return Ok(ApiResponse<UserMangaListEntryResponse>.Success(noChangeResult));
+                    return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(noChangeResult));
                 }
 
                 await _supabaseService.Client.Rpc("move_list_entry", new { p_list_id = id, p_entry_id = entryId, p_new_order_index = newOrder });
@@ -552,11 +552,11 @@ namespace AkariApi.Controllers
                     UpdatedAt = updatedEntry.UpdatedAt
                 };
 
-                return Ok(ApiResponse<UserMangaListEntryResponse>.Success(result));
+                return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(result));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to update entry order", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to update entry order", ex.Message));
             }
         }
     }

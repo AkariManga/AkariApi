@@ -33,9 +33,9 @@ namespace AkariApi.Controllers
         /// <returns>A list of the user's bookmarks.</returns>
         [HttpGet]
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
-        [ProducesResponseType(typeof(ApiResponse<BookmarkListResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<BookmarkListResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetBookmarks([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
@@ -47,7 +47,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
                 var totalCount = await _supabaseService.Client
@@ -59,7 +59,7 @@ namespace AkariApi.Controllers
 
                 if (string.IsNullOrEmpty(response.Content))
                 {
-                    return Ok(ApiResponse<BookmarkListResponse>.Success(new BookmarkListResponse
+                    return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
                     {
                         Items = new List<BookmarkResponse>(),
                         TotalItems = totalCount,
@@ -70,7 +70,7 @@ namespace AkariApi.Controllers
 
                 var bookmarks = JsonSerializer.Deserialize<List<BookmarkResponse>>(response.Content, _jsonOptions);
 
-                return Ok(ApiResponse<BookmarkListResponse>.Success(new BookmarkListResponse
+                return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
                 {
                     Items = bookmarks ?? new List<BookmarkResponse>(),
                     TotalItems = totalCount,
@@ -80,7 +80,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve bookmarks", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve bookmarks", ex.Message));
             }
         }
 
@@ -90,9 +90,9 @@ namespace AkariApi.Controllers
         /// <returns>The number of unread bookmarked manga.</returns>
         [HttpGet("unread")]
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
-        [ProducesResponseType(typeof(ApiResponse<int>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<int>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetUnreadBookmarksCount()
         {
             try
@@ -102,7 +102,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
                 var count = await _supabaseService.Client
@@ -110,11 +110,11 @@ namespace AkariApi.Controllers
                     .Where(b => b.UserId == userId)
                     .Count(Supabase.Postgrest.Constants.CountType.Exact);
 
-                return Ok(ApiResponse<int>.Success(count));
+                return Ok(SuccessResponse<int>.Create(count));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve unread bookmarks count", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve unread bookmarks count", ex.Message));
             }
         }
 
@@ -125,10 +125,10 @@ namespace AkariApi.Controllers
         /// <param name="request">The update request containing chapter number.</param>
         /// <returns>Success message.</returns>
         [HttpPut("{mangaId}")]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> UpdateReadChapter(Guid mangaId, [FromBody] UpdateBookmarkRequest request)
         {
             try
@@ -138,7 +138,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
                 await _supabaseService.Client.Rpc("batch_update_user_bookmarks", new {
@@ -147,15 +147,15 @@ namespace AkariApi.Controllers
                     p_chapter_numbers = new double[] { request.ChapterNumber }
                 });
 
-                return Ok(ApiResponse<string>.Success("Bookmark updated successfully"));
+                return Ok(SuccessResponse<string>.Create("Bookmark updated successfully"));
             }
             catch (Exception ex)
             {
                 if (ex.Message.Contains("Chapter not found"))
                 {
-                    return BadRequest(ApiResponse<ErrorData>.Error("Bad Request", ex.Message));
+                    return BadRequest(ErrorResponse.Create("Bad Request", ex.Message));
                 }
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to update bookmark", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to update bookmark", ex.Message));
             }
         }
 
@@ -166,9 +166,9 @@ namespace AkariApi.Controllers
         /// <returns>The last read chapter details.</returns>
         [HttpGet("{mangaId}")]
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
-        [ProducesResponseType(typeof(ApiResponse<LastReadResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<LastReadResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetLastReadChapter(Guid mangaId)
         {
             try
@@ -178,7 +178,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
                 var bookmark = await _supabaseService.Client
@@ -188,7 +188,7 @@ namespace AkariApi.Controllers
 
                 if (bookmark == null || bookmark.LastReadChapterId == null)
                 {
-                    return Ok(ApiResponse<LastReadResponse>.Success(null!));
+                    return Ok(SuccessResponse<LastReadResponse>.Create(null!));
                 }
 
                 var chapter = await _supabaseService.Client
@@ -198,7 +198,7 @@ namespace AkariApi.Controllers
 
                 if (chapter == null)
                 {
-                    return Ok(ApiResponse<LastReadResponse>.Success(null!));
+                    return Ok(SuccessResponse<LastReadResponse>.Create(null!));
                 }
 
                 var response = new LastReadResponse
@@ -211,11 +211,11 @@ namespace AkariApi.Controllers
                     UpdatedAt = chapter.UpdatedAt
                 };
 
-                return Ok(ApiResponse<LastReadResponse>.Success(response));
+                return Ok(SuccessResponse<LastReadResponse>.Create(response));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve last read chapter", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve last read chapter", ex.Message));
             }
         }
 
@@ -225,10 +225,10 @@ namespace AkariApi.Controllers
         /// <param name="mangaId">The manga ID.</param>
         /// <returns>Success message.</returns>
         [HttpDelete("{mangaId}")]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> DeleteBookmark(Guid mangaId)
         {
             try
@@ -238,7 +238,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
                 var bookmark = await _supabaseService.Client
@@ -248,7 +248,7 @@ namespace AkariApi.Controllers
 
                 if (bookmark == null)
                 {
-                    return NotFound(ApiResponse<ErrorData>.Error("Not Found", "Bookmark not found"));
+                    return NotFound(ErrorResponse.Create("Not Found", "Bookmark not found"));
                 }
 
                 await _supabaseService.Client
@@ -256,11 +256,11 @@ namespace AkariApi.Controllers
                     .Where(b => b.UserId == userId && b.MangaId == mangaId)
                     .Delete();
 
-                return Ok(ApiResponse<string>.Success("Bookmark deleted successfully"));
+                return Ok(SuccessResponse<string>.Create("Bookmark deleted successfully"));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to delete bookmark", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to delete bookmark", ex.Message));
             }
         }
 
@@ -270,20 +270,20 @@ namespace AkariApi.Controllers
         /// <param name="request">The batch update request.</param>
         /// <returns>Success message.</returns>
         [HttpPost("batch")]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> BatchUpdateBookmarks([FromBody] BatchUpdateBookmarksRequest request)
         {
             const int maxBatchSize = 100;
             if (request.Items == null || request.Items.Count == 0)
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("Bad Request", "No items provided"));
+                return BadRequest(ErrorResponse.Create("Bad Request", "No items provided"));
             }
             if (request.Items.Count > maxBatchSize)
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("Bad Request", $"Batch size exceeds maximum of {maxBatchSize}"));
+                return BadRequest(ErrorResponse.Create("Bad Request", $"Batch size exceeds maximum of {maxBatchSize}"));
             }
 
             try
@@ -293,7 +293,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
                 await _supabaseService.Client.Rpc("batch_update_user_bookmarks", new {
@@ -302,15 +302,15 @@ namespace AkariApi.Controllers
                     p_chapter_numbers = request.Items.Select(i => i.ChapterNumber).ToArray()
                 });
 
-                return Ok(ApiResponse<string>.Success("Bookmarks updated successfully"));
+                return Ok(SuccessResponse<string>.Create("Bookmarks updated successfully"));
             }
             catch (Exception ex)
             {
                 if (ex.Message.Contains("Chapter not found") || ex.Message.Contains("Array lengths"))
                 {
-                    return BadRequest(ApiResponse<ErrorData>.Error("Bad Request", ex.Message));
+                    return BadRequest(ErrorResponse.Create("Bad Request", ex.Message));
                 }
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to batch update bookmarks", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to batch update bookmarks", ex.Message));
             }
         }
     }

@@ -83,7 +83,7 @@ namespace AkariApi.Middleware
                             context.Response.Cookies.Delete("mal_refresh_token");
                             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                             context.Response.ContentType = "application/json";
-                            var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Invalid refresh response", 401);
+                            var errorResponse = ErrorResponse.Create("Unauthorized", "Invalid refresh response", 401);
                             await context.Response.WriteAsJsonAsync(errorResponse);
                             return;
                         }
@@ -94,7 +94,7 @@ namespace AkariApi.Middleware
                         context.Response.Cookies.Delete("mal_refresh_token");
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         context.Response.ContentType = "application/json";
-                        var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Token refresh failed", 401);
+                        var errorResponse = ErrorResponse.Create("Unauthorized", "Token refresh failed", 401);
                         await context.Response.WriteAsJsonAsync(errorResponse);
                         return;
                     }
@@ -105,7 +105,7 @@ namespace AkariApi.Middleware
                     context.Response.Cookies.Delete("mal_refresh_token");
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     context.Response.ContentType = "application/json";
-                    var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Token refresh failed", 401);
+                    var errorResponse = ErrorResponse.Create("Unauthorized", "Token refresh failed", 401);
                     await context.Response.WriteAsJsonAsync(errorResponse);
                     return;
                 }
@@ -116,7 +116,7 @@ namespace AkariApi.Middleware
                 context.Response.Cookies.Delete("mal_refresh_token");
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.ContentType = "application/json";
-                var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Re-authentication required", 401);
+                var errorResponse = ErrorResponse.Create("Unauthorized", "Re-authentication required", 401);
                 await context.Response.WriteAsJsonAsync(errorResponse);
                 return;
             }

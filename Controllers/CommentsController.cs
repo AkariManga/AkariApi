@@ -31,9 +31,9 @@ namespace AkariApi.Controllers
         /// <returns>A paginated list of top-level comments for the target.</returns>
         [HttpGet("{id}")]
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes)]
-        [ProducesResponseType(typeof(ApiResponse<PaginatedCommentResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<PaginatedCommentResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetComments(Guid id, int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
@@ -50,7 +50,7 @@ namespace AkariApi.Controllers
 
                 if (totalCount == 0)
                 {
-                    return NotFound(ApiResponse<ErrorData>.Error("No comments found for the specified target.", status: 404));
+                    return NotFound(ErrorResponse.Create("No comments found for the specified target.", status: 404));
                 }
 
                 var response = await _supabaseService.Client
@@ -58,7 +58,7 @@ namespace AkariApi.Controllers
 
                 if (string.IsNullOrEmpty(response.Content))
                 {
-                    return Ok(ApiResponse<PaginatedCommentResponse>.Success(new PaginatedCommentResponse
+                    return Ok(SuccessResponse<PaginatedCommentResponse>.Create(new PaginatedCommentResponse
                     {
                         Items = new List<CommentResponse>(),
                         TotalItems = totalCount,
@@ -102,7 +102,7 @@ namespace AkariApi.Controllers
                     } : null,
                 }).ToList();
 
-                return Ok(ApiResponse<PaginatedCommentResponse>.Success(new PaginatedCommentResponse
+                return Ok(SuccessResponse<PaginatedCommentResponse>.Create(new PaginatedCommentResponse
                 {
                     Items = comments,
                     TotalItems = totalCount,
@@ -112,7 +112,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("An error occurred while fetching comments.", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("An error occurred while fetching comments.", ex.Message));
             }
         }
 
@@ -123,15 +123,15 @@ namespace AkariApi.Controllers
         /// <returns>A list of the user's votes on comments in the target.</returns>
         [HttpGet("{id}/votes")]
         [RequireTokenRefresh]
-        [ProducesResponseType(typeof(ApiResponse<List<CommentVoteResponse>>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<List<CommentVoteResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetUserCommentVotes(Guid id)
         {
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
             }
 
             try
@@ -143,16 +143,16 @@ namespace AkariApi.Controllers
 
                 if (string.IsNullOrEmpty(response.Content))
                 {
-                    return Ok(ApiResponse<List<CommentVoteResponse>>.Success(new List<CommentVoteResponse>()));
+                    return Ok(SuccessResponse<List<CommentVoteResponse>>.Create(new List<CommentVoteResponse>()));
                 }
 
                 var votes = JsonSerializer.Deserialize<List<CommentVoteResponse>>(response.Content, _jsonOptions) ?? new List<CommentVoteResponse>();
 
-                return Ok(ApiResponse<List<CommentVoteResponse>>.Success(votes));
+                return Ok(SuccessResponse<List<CommentVoteResponse>>.Create(votes));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve user comment votes", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve user comment votes", ex.Message));
             }
         }
 
@@ -163,9 +163,9 @@ namespace AkariApi.Controllers
         /// <returns>A list of replies for the comment.</returns>
         [HttpGet("{commentId}/replies")]
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes)]
-        [ProducesResponseType(typeof(ApiResponse<List<CommentWithRepliesResponse>>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<List<CommentWithRepliesResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetCommentReplies(Guid commentId)
         {
             try
@@ -175,17 +175,17 @@ namespace AkariApi.Controllers
 
                 if (string.IsNullOrEmpty(response.Content))
                 {
-                    return Ok(ApiResponse<List<CommentWithRepliesResponse>>.Success(new List<CommentWithRepliesResponse>()));
+                    return Ok(SuccessResponse<List<CommentWithRepliesResponse>>.Create(new List<CommentWithRepliesResponse>()));
                 }
 
                 var allReplies = JsonSerializer.Deserialize<List<CommentWithRepliesResponse>>(response.Content, _jsonOptions) ?? new List<CommentWithRepliesResponse>();
 
                 var replies = BuildReplyTree(allReplies, commentId);
-                return Ok(ApiResponse<List<CommentWithRepliesResponse>>.Success(replies));
+                return Ok(SuccessResponse<List<CommentWithRepliesResponse>>.Create(replies));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve comment replies", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve comment replies", ex.Message));
             }
         }
 
@@ -209,17 +209,17 @@ namespace AkariApi.Controllers
         /// <returns>A success message.</returns>
         [HttpPost("{commentId}/vote")]
         [RequireTokenRefresh]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> VoteComment(Guid commentId, [FromBody] VoteCommentRequest request)
         {
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
             }
 
             try
@@ -232,10 +232,10 @@ namespace AkariApi.Controllers
                     .Single();
 
                 if (comment == null)
-                    return NotFound(ApiResponse<ErrorData>.Error("Comment not found", status: 404));
+                    return NotFound(ErrorResponse.Create("Comment not found", status: 404));
 
                 if (comment.Deleted)
-                    return BadRequest(ApiResponse<ErrorData>.Error("Cannot vote on deleted comment"));
+                    return BadRequest(ErrorResponse.Create("Cannot vote on deleted comment"));
 
                 // Check if user already voted
                 var existingVote = await _supabaseService.Client
@@ -250,7 +250,7 @@ namespace AkariApi.Controllers
                     {
                         await _supabaseService.Client.From<CommentVoteDto>().Delete(existingVote);
                     }
-                    return Ok(ApiResponse<string>.Success("Vote removed successfully"));
+                    return Ok(SuccessResponse<string>.Create("Vote removed successfully"));
                 }
                 else
                 {
@@ -271,12 +271,12 @@ namespace AkariApi.Controllers
 
                         await _supabaseService.Client.From<CommentVoteDto>().Insert(vote);
                     }
-                    return Ok(ApiResponse<string>.Success("Vote recorded successfully"));
+                    return Ok(SuccessResponse<string>.Create("Vote recorded successfully"));
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to vote on comment", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to vote on comment", ex.Message));
             }
         }
 
@@ -288,17 +288,17 @@ namespace AkariApi.Controllers
         /// <returns>A success message.</returns>
         [HttpPost("{id}")]
         [RequireTokenRefresh]
-        [ProducesResponseType(typeof(ApiResponse<CommentResponse>), 201)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<CommentResponse>), 201)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> CreateComment(Guid id, [FromBody] CreateCommentRequest request)
         {
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
             }
 
             try
@@ -313,9 +313,9 @@ namespace AkariApi.Controllers
                         .Single();
 
                     if (parentComment == null)
-                        return BadRequest(ApiResponse<ErrorData>.Error("Invalid parent comment"));
+                        return BadRequest(ErrorResponse.Create("Invalid parent comment"));
                     if (parentComment.Deleted)
-                        return BadRequest(ApiResponse<ErrorData>.Error("Cannot reply to a deleted comment"));
+                        return BadRequest(ErrorResponse.Create("Cannot reply to a deleted comment"));
                 }
 
                 var comment = new CommentDto
@@ -338,12 +338,12 @@ namespace AkariApi.Controllers
 
                 var createdComment = response.Models.FirstOrDefault();
                 if (createdComment == null)
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to create comment"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to create comment"));
 
                 var userProfile = await _supabaseService.Client.From<ProfileDto>().Where(p => p.Id == userId).Single();
 
                 if (userProfile == null)
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve user profile"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to retrieve user profile"));
 
                 UploadResponse? attachment = null;
                 if (createdComment.AttachmentId.HasValue)
@@ -388,11 +388,11 @@ namespace AkariApi.Controllers
                     Attachment = attachment
                 };
 
-                return Created("", ApiResponse<CommentResponse>.Success(commentResponse));
+                return Created("", SuccessResponse<CommentResponse>.Create(commentResponse));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to create comment", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to create comment", ex.Message));
             }
         }
 
@@ -404,18 +404,18 @@ namespace AkariApi.Controllers
         /// <returns>A success message.</returns>
         [HttpPut("{commentId}")]
         [RequireTokenRefresh]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 403)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> UpdateComment(Guid commentId, [FromBody] UpdateCommentRequest request)
         {
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
             }
 
             try
@@ -428,13 +428,13 @@ namespace AkariApi.Controllers
                     .Single();
 
                 if (comment == null)
-                    return NotFound(ApiResponse<ErrorData>.Error("Comment not found", status: 404));
+                    return NotFound(ErrorResponse.Create("Comment not found", status: 404));
 
                 if (comment.UserId != userId)
-                    return StatusCode(403, ApiResponse<ErrorData>.Error("Forbidden", "You can only edit your own comments"));
+                    return StatusCode(403, ErrorResponse.Create("Forbidden", "You can only edit your own comments"));
 
                 if (comment.Deleted)
-                    return BadRequest(ApiResponse<ErrorData>.Error("Cannot edit deleted comment"));
+                    return BadRequest(ErrorResponse.Create("Cannot edit deleted comment"));
 
                 comment.Content = request.Content;
                 comment.UpdatedAt = DateTimeOffset.UtcNow;
@@ -442,11 +442,11 @@ namespace AkariApi.Controllers
 
                 await _supabaseService.Client.From<CommentDto>().Update(comment);
 
-                return Ok(ApiResponse<string>.Success("Comment updated successfully"));
+                return Ok(SuccessResponse<string>.Create("Comment updated successfully"));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to update comment", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to update comment", ex.Message));
             }
         }
 
@@ -457,17 +457,17 @@ namespace AkariApi.Controllers
         /// <returns>A success message.</returns>
         [HttpDelete("{commentId}")]
         [RequireTokenRefresh]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 403)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> DeleteComment(Guid commentId)
         {
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
             }
 
             try
@@ -480,10 +480,10 @@ namespace AkariApi.Controllers
                     .Single();
 
                 if (comment == null)
-                    return NotFound(ApiResponse<ErrorData>.Error("Comment not found", status: 404));
+                    return NotFound(ErrorResponse.Create("Comment not found", status: 404));
 
                 if (comment.UserId != userId)
-                    return StatusCode(403, ApiResponse<ErrorData>.Error("Forbidden", "You can only delete your own comments"));
+                    return StatusCode(403, ErrorResponse.Create("Forbidden", "You can only delete your own comments"));
 
                 // Soft delete
                 comment.Deleted = true;
@@ -492,11 +492,11 @@ namespace AkariApi.Controllers
 
                 await _supabaseService.Client.From<CommentDto>().Update(comment);
 
-                return Ok(ApiResponse<string>.Success("Comment deleted successfully"));
+                return Ok(SuccessResponse<string>.Create("Comment deleted successfully"));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to delete comment", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to delete comment", ex.Message));
             }
         }
     }

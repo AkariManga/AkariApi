@@ -34,8 +34,8 @@ namespace AkariApi.Controllers
         /// <returns>A list of manga.</returns>
         [HttpGet("list")]
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.OneHour)]
-        [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaListResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetMangaList(
             [FromQuery] string sortBy = "latest",
             [FromQuery] string query = "",
@@ -64,7 +64,7 @@ namespace AkariApi.Controllers
 
                 if (string.IsNullOrEmpty(rpcResponse.Content))
                 {
-                    return Ok(ApiResponse<MangaListResponse>.Success(new MangaListResponse
+                    return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                     {
                         Items = new List<MangaResponse>(),
                         TotalItems = 0,
@@ -108,7 +108,7 @@ namespace AkariApi.Controllers
                     }
                 }
 
-                return Ok(ApiResponse<MangaListResponse>.Success(new MangaListResponse
+                return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                 {
                     Items = mangaList,
                     TotalItems = (int)totalCount,
@@ -118,7 +118,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve manga list", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga list", ex.Message));
             }
         }
 
@@ -131,8 +131,8 @@ namespace AkariApi.Controllers
         /// <returns>A list of popular manga.</returns>
         [HttpGet("list/popular")]
         [CacheControl(CacheDuration.OneHour, CacheDuration.TwelveHours)]
-        [ProducesResponseType(typeof(ApiResponse<MangaListResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaListResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetPopularManga([FromQuery, Range(1, 365)] int days = 30, [FromQuery, Range(1, 100)] int limit = 20, [FromQuery, Range(0, int.MaxValue)] int offset = 0)
         {
             try
@@ -143,7 +143,7 @@ namespace AkariApi.Controllers
 
                 if (string.IsNullOrEmpty(response.Content))
                 {
-                    return Ok(ApiResponse<MangaListResponse>.Success(new MangaListResponse
+                    return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                     {
                         Items = new List<MangaResponse>(),
                         TotalItems = 0,
@@ -174,7 +174,7 @@ namespace AkariApi.Controllers
 
                 var totalCount = popularManga?.FirstOrDefault()?.TotalCount ?? 0;
 
-                return Ok(ApiResponse<MangaListResponse>.Success(new MangaListResponse
+                return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                 {
                     Items = mangaList,
                     TotalItems = (int)totalCount,
@@ -184,7 +184,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve popular manga", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve popular manga", ex.Message));
             }
         }
 
@@ -195,9 +195,9 @@ namespace AkariApi.Controllers
         /// <returns>Detailed manga information.</returns>
         [HttpGet("{id}")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
-        [ProducesResponseType(typeof(ApiResponse<MangaDetailResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaDetailResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetMangaById(Guid id)
         {
             try
@@ -211,7 +211,7 @@ namespace AkariApi.Controllers
                     .Single();
 
                 if (response == null)
-                    return NotFound(ApiResponse<ErrorData>.Error("Manga not found", status: 404));
+                    return NotFound(ErrorResponse.Create("Manga not found", status: 404));
 
                 var manga = response;
                 var sortedChapters = manga.Chapters?.OrderBy(c => c.Number).ToList() ?? new List<ChapterDto>();
@@ -243,11 +243,11 @@ namespace AkariApi.Controllers
                     }).ToList()
                 };
 
-                return Ok(ApiResponse<MangaDetailResponse>.Success(responseObj));
+                return Ok(SuccessResponse<MangaDetailResponse>.Create(responseObj));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve manga", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga", ex.Message));
             }
         }
 
@@ -258,9 +258,9 @@ namespace AkariApi.Controllers
         /// <returns>A list of chapters for the manga.</returns>
         [HttpGet("{id}/chapters")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
-        [ProducesResponseType(typeof(ApiResponse<List<MangaChapter>>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<List<MangaChapter>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetMangaChapters(Guid id)
         {
             try
@@ -284,11 +284,11 @@ namespace AkariApi.Controllers
                     CreatedAt = c.CreatedAt,
                 }).ToList();
 
-                return Ok(ApiResponse<List<MangaChapter>>.Success(chapters));
+                return Ok(SuccessResponse<List<MangaChapter>>.Create(chapters));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve chapters", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve chapters", ex.Message));
             }
         }
 
@@ -297,9 +297,9 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
         [HttpPost("{id}/view")]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> ViewManga(Guid id)
         {
             var clientIp = HttpContext.Request.Headers["CF-Connecting-IP"].FirstOrDefault();
@@ -318,7 +318,7 @@ namespace AkariApi.Controllers
 
             if (string.IsNullOrEmpty(clientIp))
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("Unable to determine client IP address"));
+                return BadRequest(ErrorResponse.Create("Unable to determine client IP address"));
             }
 
             try
@@ -328,20 +328,20 @@ namespace AkariApi.Controllers
                 var rpcResponse = await _supabaseService.AdminClient.Rpc("increment_manga_view", new { p_manga_id = id, p_ip = clientIp });
                 if (rpcResponse.Content == "\"count_incremented\"")
                 {
-                    return Ok(ApiResponse<string>.Success("Views updated successfully"));
+                    return Ok(SuccessResponse<string>.Create("Views updated successfully"));
                 }
                 else if (rpcResponse.Content == "\"ignored_recent_view\"")
                 {
-                    return Ok(ApiResponse<string>.Success("View recorded (recent view ignored)"));
+                    return Ok(SuccessResponse<string>.Create("View recorded (recent view ignored)"));
                 }
                 else
                 {
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Unexpected response from RPC"));
+                    return StatusCode(500, ErrorResponse.Create("Unexpected response from RPC"));
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to update views", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to update views", ex.Message));
             }
         }
 
@@ -353,16 +353,16 @@ namespace AkariApi.Controllers
         /// <returns>A success message.</returns>
         [HttpPost("{id}/rate")]
         [RequireTokenRefresh]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> RateManga(Guid id, [FromBody] RateMangaRequest request)
         {
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
             }
 
             try
@@ -377,11 +377,11 @@ namespace AkariApi.Controllers
                 };
 
                 var response = await _supabaseService.Client.From<MangaRatingDto>().Upsert(rating, new Supabase.Postgrest.QueryOptions { OnConflict = "user_id,manga_id" });
-                return Ok(ApiResponse<string>.Success("Rating submitted successfully"));
+                return Ok(SuccessResponse<string>.Create("Rating submitted successfully"));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to rate manga", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to rate manga", ex.Message));
             }
         }
 
@@ -392,9 +392,9 @@ namespace AkariApi.Controllers
         /// <returns>Detailed manga information.</returns>
         [HttpGet("mal/{id}")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
-        [ProducesResponseType(typeof(ApiResponse<MangaDetailResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaDetailResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetMangaByMalId(int id)
         {
             try
@@ -408,7 +408,7 @@ namespace AkariApi.Controllers
                     .Single();
 
                 if (response == null)
-                    return NotFound(ApiResponse<ErrorData>.Error("Manga not found", status: 404));
+                    return NotFound(ErrorResponse.Create("Manga not found", status: 404));
 
                 var manga = response;
                 var sortedChapters = manga.Chapters?.OrderBy(c => c.Number).ToList() ?? new List<ChapterDto>();
@@ -440,11 +440,11 @@ namespace AkariApi.Controllers
                     }).ToList()
                 };
 
-                return Ok(ApiResponse<MangaDetailResponse>.Success(responseObj));
+                return Ok(SuccessResponse<MangaDetailResponse>.Create(responseObj));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve manga", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga", ex.Message));
             }
         }
 
@@ -455,19 +455,19 @@ namespace AkariApi.Controllers
         /// <returns>A list of detailed manga information.</returns>
         [HttpPost("mal/batch")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
-        [ProducesResponseType(typeof(ApiResponse<List<MangaResponse>>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<List<MangaResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> BatchGetMangaByMalIds([FromBody] BatchGetMangaRequest request)
         {
             if (request.MalIds == null || !request.MalIds.Any())
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("At least one MAL ID is required"));
+                return BadRequest(ErrorResponse.Create("At least one MAL ID is required"));
             }
 
             if (request.MalIds.Count > 50)
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("Maximum 50 MAL IDs allowed per request"));
+                return BadRequest(ErrorResponse.Create("Maximum 50 MAL IDs allowed per request"));
             }
 
             try
@@ -503,11 +503,11 @@ namespace AkariApi.Controllers
                     };
                 }).ToList();
 
-                return Ok(ApiResponse<List<MangaResponse>>.Success(mangaList));
+                return Ok(SuccessResponse<List<MangaResponse>>.Create(mangaList));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve manga", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga", ex.Message));
             }
         }
 
@@ -519,9 +519,9 @@ namespace AkariApi.Controllers
         /// <returns>The chapter details.</returns>
         [HttpGet("{id}/{subId}")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
-        [ProducesResponseType(typeof(ApiResponse<ChapterResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 404)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<ChapterResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetChapter(Guid id, float subId)
         {
             try
@@ -531,18 +531,18 @@ namespace AkariApi.Controllers
                 var response = await _supabaseService.Client.Rpc("get_chapter_by_manga_and_number", new { _manga_id = id.ToString(), _number = subId });
 
                 if (string.IsNullOrEmpty(response.Content))
-                    return NotFound(ApiResponse<ErrorData>.Error("Chapter not found", status: 404));
+                    return NotFound(ErrorResponse.Create("Chapter not found", status: 404));
 
                 var chapter = JsonSerializer.Deserialize<ChapterResponse>(response.Content, _jsonOptions);
 
                 if (chapter == null)
-                    return NotFound(ApiResponse<ErrorData>.Error("Chapter not found", status: 404));
+                    return NotFound(ErrorResponse.Create("Chapter not found", status: 404));
 
-                return Ok(ApiResponse<ChapterResponse>.Success(chapter));
+                return Ok(SuccessResponse<ChapterResponse>.Create(chapter));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to retrieve chapter", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve chapter", ex.Message));
             }
         }
 
@@ -554,13 +554,13 @@ namespace AkariApi.Controllers
         /// <returns>A list of matching manga.</returns>
         [HttpGet("search")]
         [CacheControl(CacheDuration.OneHour, CacheDuration.SixHours)]
-        [ProducesResponseType(typeof(ApiResponse<List<MangaSearchResponse>>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<List<MangaSearchResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> SearchManga([FromQuery] string query, [FromQuery, Range(1, 100)] int limit = 20)
         {
             if (string.IsNullOrWhiteSpace(query))
-                return BadRequest(ApiResponse<ErrorData>.Error("Search query is required"));
+                return BadRequest(ErrorResponse.Create("Search query is required"));
 
             if (limit > 100)
                 limit = 100;
@@ -575,16 +575,16 @@ namespace AkariApi.Controllers
 
                 if (string.IsNullOrEmpty(response.Content))
                 {
-                    return Ok(ApiResponse<List<MangaSearchResponse>>.Success(new List<MangaSearchResponse>()));
+                    return Ok(SuccessResponse<List<MangaSearchResponse>>.Create(new List<MangaSearchResponse>()));
                 }
 
                 var searchResults = JsonSerializer.Deserialize<List<MangaSearchResponse>>(response.Content, _jsonOptions);
 
-                return Ok(ApiResponse<List<MangaSearchResponse>>.Success(searchResults ?? new List<MangaSearchResponse>()));
+                return Ok(SuccessResponse<List<MangaSearchResponse>>.Create(searchResults ?? new List<MangaSearchResponse>()));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to search manga", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to search manga", ex.Message));
             }
         }
 

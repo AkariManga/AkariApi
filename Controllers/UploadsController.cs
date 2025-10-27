@@ -29,13 +29,13 @@ namespace AkariApi.Controllers
 
         [HttpPost()]
         [EnableRateLimiting("uploads")]
-        [ProducesResponseType(typeof(ApiResponse<UploadResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<UploadResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> UploadImage([FromForm] UploadRequest request)
         {
             if (request.File == null || request.File.Length == 0)
-                return BadRequest(ApiResponse<ErrorData>.Error("No file uploaded."));
+                return BadRequest(ErrorResponse.Create("No file uploaded."));
 
             var file = request.File;
             var tags = request.Tags ?? Array.Empty<string>();
@@ -45,7 +45,7 @@ namespace AkariApi.Controllers
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
             }
 
             string fileHash;
@@ -102,7 +102,7 @@ namespace AkariApi.Controllers
                     });
 
                 if (string.IsNullOrEmpty(uploadResult))
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to upload file to storage"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to upload file to storage"));
 
                 publicUrl = $"https://img.akarimanga.dpdns.org/{uploadResult}";
             }
@@ -135,13 +135,13 @@ namespace AkariApi.Controllers
                 CreatedAt = uploadDto.CreatedAt
             };
 
-            return Ok(ApiResponse<UploadResponse>.Success(uploadResponse));
+            return Ok(SuccessResponse<UploadResponse>.Create(uploadResponse));
         }
 
         [HttpGet]
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes)]
-        [ProducesResponseType(typeof(ApiResponse<PaginatedResponse<UploadResponse>>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<PaginatedResponse<UploadResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetUploads([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
@@ -179,19 +179,19 @@ namespace AkariApi.Controllers
                     PageSize = clampedPageSize
                 };
 
-                return Ok(ApiResponse<PaginatedResponse<UploadResponse>>.Success(paginatedResponse));
+                return Ok(SuccessResponse<PaginatedResponse<UploadResponse>>.Create(paginatedResponse));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("An error occurred while retrieving uploads", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("An error occurred while retrieving uploads", ex.Message));
             }
         }
 
         [HttpGet("me")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.FiveMinutes, false)]
-        [ProducesResponseType(typeof(ApiResponse<PaginatedResponse<UploadResponse>>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<PaginatedResponse<UploadResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         [RequireTokenRefresh]
         public async Task<IActionResult> GetMyUploads([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
@@ -204,7 +204,7 @@ namespace AkariApi.Controllers
                 var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(error))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", error, 401));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
                 }
 
                 var query = _supabaseService.Client
@@ -239,11 +239,11 @@ namespace AkariApi.Controllers
                     PageSize = clampedPageSize
                 };
 
-                return Ok(ApiResponse<PaginatedResponse<UploadResponse>>.Success(paginatedResponse));
+                return Ok(SuccessResponse<PaginatedResponse<UploadResponse>>.Create(paginatedResponse));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("An error occurred while retrieving uploads", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("An error occurred while retrieving uploads", ex.Message));
             }
         }
     }

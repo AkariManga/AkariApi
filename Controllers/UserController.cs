@@ -26,14 +26,14 @@ namespace AkariApi.Controllers
         /// <param name="request">The signup request containing email and password.</param>
         /// <returns>The signup response.</returns>
         [HttpPost("signup")]
-        [ProducesResponseType(typeof(ApiResponse<Session>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<Session>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> SignUp([FromBody] SignUpRequest request)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
             }
 
             try
@@ -47,7 +47,7 @@ namespace AkariApi.Controllers
                     .Get();
                 if (existingUser != null && existingUser.Models.Count > 0)
                 {
-                    return BadRequest(ApiResponse<ErrorData>.Error("Invalid request", "Username already taken"));
+                    return BadRequest(ErrorResponse.Create("Invalid request", "Username already taken"));
                 }
 
                 var options = new Supabase.Gotrue.SignUpOptions
@@ -58,7 +58,7 @@ namespace AkariApi.Controllers
 
                 if (session == null)
                 {
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign up", "User creation returned null"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to sign up", "User creation returned null"));
                 }
 
                 if (!string.IsNullOrEmpty(session.AccessToken))
@@ -70,11 +70,11 @@ namespace AkariApi.Controllers
                     }
                 }
 
-                return Ok(ApiResponse<Session>.Success(session));
+                return Ok(SuccessResponse<Session>.Create(session));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign up", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to sign up", ex.Message));
             }
         }
 
@@ -84,14 +84,14 @@ namespace AkariApi.Controllers
         /// <param name="request">The signin request containing email and password.</param>
         /// <returns>The signin response.</returns>
         [HttpPost("signin")]
-        [ProducesResponseType(typeof(ApiResponse<UserResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 400)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<UserResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> SignIn([FromBody] SignInRequest request)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ApiResponse<ErrorData>.Error("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
             }
 
             try
@@ -102,17 +102,17 @@ namespace AkariApi.Controllers
 
                 if (session == null)
                 {
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign in", "Authentication returned null"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to sign in", "Authentication returned null"));
                 }
 
                 if (session.User == null || string.IsNullOrEmpty(session.User.Id))
                 {
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign in", "User ID not found in session"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to sign in", "User ID not found in session"));
                 }
 
                 if (!Guid.TryParse(session.User.Id, out var userId))
                 {
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign in", "Invalid user ID format"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to sign in", "Invalid user ID format"));
                 }
 
                 // Fetch user profile from profiles table
@@ -123,7 +123,7 @@ namespace AkariApi.Controllers
 
                 if (profile == null)
                 {
-                    return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign in", "Profile not found"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to sign in", "Profile not found"));
                 }
 
                 var userResponse = new UserResponse
@@ -142,11 +142,11 @@ namespace AkariApi.Controllers
                     }
                 }
 
-                return Ok(ApiResponse<UserResponse>.Success(userResponse));
+                return Ok(SuccessResponse<UserResponse>.Create(userResponse));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign in", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to sign in", ex.Message));
             }
         }
 
@@ -155,8 +155,8 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <returns>The signout response.</returns>
         [HttpPost("signout")]
-        [ProducesResponseType(typeof(ApiResponse<string>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         public new async Task<IActionResult> SignOut()
         {
             try
@@ -169,11 +169,11 @@ namespace AkariApi.Controllers
                 Response.Cookies.Delete("accessToken");
                 Response.Cookies.Delete("refreshToken");
 
-                return Ok(ApiResponse<string>.Success("Signed out successfully"));
+                return Ok(SuccessResponse<string>.Create("Signed out successfully"));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ApiResponse<ErrorData>.Error("Failed to sign out", ex.Message));
+                return StatusCode(500, ErrorResponse.Create("Failed to sign out", ex.Message));
             }
         }
 
@@ -183,16 +183,16 @@ namespace AkariApi.Controllers
         /// <returns>The user information.</returns>
         [HttpGet("me")]
         [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
-        [ProducesResponseType(typeof(ApiResponse<UserResponse>), 200)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 401)]
-        [ProducesResponseType(typeof(ApiResponse<ErrorData>), 500)]
+        [ProducesResponseType(typeof(SuccessResponse<UserResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
         [RequireTokenRefresh]
         public async Task<IActionResult> GetMe()
         {
             var token = AuthenticationHelper.GetAccessToken(Request);
             if (string.IsNullOrEmpty(token))
             {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Missing or invalid token"));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", "Missing or invalid token"));
             }
 
             try
@@ -201,17 +201,17 @@ namespace AkariApi.Controllers
                 var user = await _supabaseService.Client.Auth.GetUser(token);
                 if (user == null)
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Invalid token"));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", "Invalid token"));
                 }
 
                 if (string.IsNullOrEmpty(user.Id))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "User ID not found"));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", "User ID not found"));
                 }
 
                 if (!Guid.TryParse(user.Id, out var userId))
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Invalid user ID format"));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", "Invalid user ID format"));
                 }
 
                 // Fetch user profile from profiles table
@@ -222,7 +222,7 @@ namespace AkariApi.Controllers
 
                 if (profile == null)
                 {
-                    return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", "Profile not found"));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", "Profile not found"));
                 }
 
                 var userResponse = new UserResponse
@@ -232,11 +232,11 @@ namespace AkariApi.Controllers
                     DisplayName = profile.DisplayName
                 };
 
-                return Ok(ApiResponse<UserResponse>.Success(userResponse));
+                return Ok(SuccessResponse<UserResponse>.Create(userResponse));
             }
             catch (Exception ex)
             {
-                return Unauthorized(ApiResponse<ErrorData>.Error("Unauthorized", ex.Message));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", ex.Message));
             }
         }
     }

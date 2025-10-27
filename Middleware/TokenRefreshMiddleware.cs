@@ -73,7 +73,7 @@ namespace AkariApi.Middleware
                             context.Response.Cookies.Delete("refreshToken");
                             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                             context.Response.ContentType = "application/json";
-                            var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Invalid refresh token or session expired", 401);
+                            var errorResponse = ErrorResponse.Create("Unauthorized", "Invalid refresh token or session expired", 401);
                             await context.Response.WriteAsJsonAsync(errorResponse);
                             return;
                         }
@@ -87,7 +87,7 @@ namespace AkariApi.Middleware
                         context.Response.Cookies.Delete("refreshToken");
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         context.Response.ContentType = "application/json";
-                        var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Token refresh failed - please sign in again", 401);
+                        var errorResponse = ErrorResponse.Create("Unauthorized", "Token refresh failed - please sign in again", 401);
                         await context.Response.WriteAsJsonAsync(errorResponse);
                         return;
                     }
@@ -99,7 +99,7 @@ namespace AkariApi.Middleware
                 context.Response.Cookies.Delete("refreshToken");
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.ContentType = "application/json";
-                var errorResponse = ApiResponse<ErrorData>.Error("Unauthorized", "Re-authentication required", 401);
+                var errorResponse = ErrorResponse.Create("Unauthorized", "Re-authentication required", 401);
                 await context.Response.WriteAsJsonAsync(errorResponse);
                 return;
             }

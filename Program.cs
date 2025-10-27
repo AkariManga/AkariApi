@@ -17,6 +17,7 @@ builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v2", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "AkariApi v2", Version = "v2" });
     options.SchemaFilter<EnumSchemaFilter>();
+    options.SchemaFilter<ApiResponseSchemaFilter>();
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, "AkariApi.xml"));
     if (builder.Environment.IsDevelopment())
     {
@@ -38,9 +39,9 @@ builder.Services.AddSwaggerGen(options =>
         In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
         Name = "mal_access_token",
     });
-    options.OperationFilter<AkariApi.Filters.AuthorizeCheckOperationFilter>();
-    options.OperationFilter<AkariApi.Filters.MalAuthorizeCheckOperationFilter>();
-    options.OperationFilter<AkariApi.Filters.RemoveExtraContentTypesOperationFilter>();
+    options.OperationFilter<AuthorizeCheckOperationFilter>();
+    options.OperationFilter<MalAuthorizeCheckOperationFilter>();
+    options.OperationFilter<RemoveExtraContentTypesOperationFilter>();
 });
 
 builder.Services.AddApiVersioning(options =>
