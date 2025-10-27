@@ -1,14 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using AkariApi.Models;
-using AkariApi.Services;
 using AkariApi.Attributes;
 using System.Text.Json;
-using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
-using System.Net.Http;
-using Microsoft.Extensions.Configuration;
-using Microsoft.AspNetCore.Http;
 using System.Net.Http.Headers;
+using Microsoft.Extensions.Configuration;
 
 namespace AkariApi.Controllers
 {
@@ -20,9 +16,9 @@ namespace AkariApi.Controllers
     {
         private readonly string clientId;
 
-        public MalController()
+        public MalController(IConfiguration configuration)
         {
-            clientId = Environment.GetEnvironmentVariable("CLIENT_ID") ?? string.Empty;
+            clientId = configuration["MAL_CLIENT_ID"] ?? string.Empty;
         }
 
         /// <summary>
@@ -130,7 +126,7 @@ namespace AkariApi.Controllers
 
             if (response.IsSuccessStatusCode)
             {
-                var data = JsonSerializer.Deserialize<MalMangaListStatus>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var data = JsonSerializer.Deserialize<MalMangaListStatus>(responseContent, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, PropertyNameCaseInsensitive = true });
                 if (data == null)
                 {
                     return StatusCode(500, ErrorResponse.Create("Invalid response from MAL"));
@@ -187,6 +183,8 @@ namespace AkariApi.Controllers
             }
             queryParams.Add($"limit={limit}");
             queryParams.Add($"offset={offset}");
+            queryParams.Add("sort=list_score");
+            queryParams.Add("fields=list_status");
 
             var queryString = string.Join("&", queryParams);
             var url = $"https://api.myanimelist.net/v2/users/@me/mangalist?{queryString}";
@@ -199,7 +197,7 @@ namespace AkariApi.Controllers
 
             if (response.IsSuccessStatusCode)
             {
-                var data = JsonSerializer.Deserialize<MalMangaListResponse>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var data = JsonSerializer.Deserialize<MalMangaListResponse>(responseContent, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, PropertyNameCaseInsensitive = true });
                 if (data == null)
                 {
                     return StatusCode(500, ErrorResponse.Create("Invalid response from MAL"));

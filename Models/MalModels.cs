@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AkariApi.Models
 {
     public class MalTokenRequest
@@ -9,31 +11,23 @@ namespace AkariApi.Models
 
     public class MalTokenResponse
     {
-        public required string AccessToken { get; set; }
-        public required string RefreshToken { get; set; }
-        public required int ExpiresIn { get; set; }
-        public required string TokenType { get; set; }
+        [JsonPropertyName("access_token")]
+        public string AccessToken { get; set; } = string.Empty;
+
+        [JsonPropertyName("refresh_token")]
+        public string RefreshToken { get; set; } = string.Empty;
+
+        [JsonPropertyName("expires_in")]
+        public int ExpiresIn { get; set; }
+
+        [JsonPropertyName("token_type")]
+        public string TokenType { get; set; } = string.Empty;
     }
 
     public class MalUpdateMangaListRequest
     {
         public required int MangaId { get; set; }
         public required int NumChaptersRead { get; set; }
-    }
-
-    public class MalMangaListStatus
-    {
-        public required string Status { get; set; }
-        public required bool IsRereading { get; set; }
-        public required int NumVolumesRead { get; set; }
-        public required int NumChaptersRead { get; set; }
-        public required int Score { get; set; }
-        public required string UpdatedAt { get; set; }
-        public required int Priority { get; set; }
-        public required int NumTimesReread { get; set; }
-        public required int RereadValue { get; set; }
-        public required List<string> Tags { get; set; }
-        public required string Comments { get; set; }
     }
 
     public class MalMangaListResponse
@@ -45,14 +39,22 @@ namespace AkariApi.Models
     public class MalMangaListItem
     {
         public required MalMangaNode Node { get; set; }
-        public required MalListStatus ListStatus { get; set; }
+        public MalListStatus ListStatus { get; set; } = new MalListStatus
+        {
+            Status = string.Empty,
+            IsRereading = false,
+            NumVolumesRead = 0,
+            NumChaptersRead = 0,
+            Score = 0,
+            UpdatedAt = string.Empty
+        };
     }
 
     public class MalMangaNode
     {
         public required int Id { get; set; }
         public required string Title { get; set; }
-        public required MalMainPicture MainPicture { get; set; }
+        public MalMainPicture? MainPicture { get; set; }
     }
 
     public class MalMainPicture
@@ -63,12 +65,27 @@ namespace AkariApi.Models
 
     public class MalListStatus
     {
-        public required string Status { get; set; }
-        public required bool IsRereading { get; set; }
-        public required int NumVolumesRead { get; set; }
-        public required int NumChaptersRead { get; set; }
-        public required int Score { get; set; }
-        public required string UpdatedAt { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public bool IsRereading { get; set; } = false;
+        public int NumVolumesRead { get; set; } = 0;
+        public int NumChaptersRead { get; set; } = 0;
+        public int Score { get; set; } = 0;
+        public string UpdatedAt { get; set; } = string.Empty;
+    }
+
+    public class MalMangaListStatus
+    {
+        public string Status { get; set; } = string.Empty;
+        public bool IsRereading { get; set; } = false;
+        public int NumVolumesRead { get; set; } = 0;
+        public int NumChaptersRead { get; set; } = 0;
+        public int Score { get; set; } = 0;
+        public string UpdatedAt { get; set; } = string.Empty;
+        public int Priority { get; set; } = 0;
+        public int NumTimesReread { get; set; } = 0;
+        public int RereadValue { get; set; } = 0;
+        public List<string> Tags { get; set; } = new List<string>();
+        public string Comments { get; set; } = string.Empty;
     }
 
     public class MalPaging
