@@ -86,7 +86,6 @@ namespace AkariApi.Controllers
                     LEFT JOIN (
                         SELECT parent_id, COUNT(*) as reply_count
                         FROM comments
-                        WHERE deleted = false
                         GROUP BY parent_id
                     ) reply_counts ON c.id = reply_counts.parent_id
                     WHERE c.parent_id IS NULL AND c.target_id = @target_id
