@@ -35,7 +35,6 @@ namespace AkariApi.Controllers
         [HttpGet("{id}")]
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes)]
         [ProducesResponseType(typeof(SuccessResponse<PaginatedCommentResponse>), 200)]
-        [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetComments(Guid id, int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
@@ -62,7 +61,13 @@ namespace AkariApi.Controllers
 
                 if (totalCount == 0)
                 {
-                    return NotFound(ErrorResponse.Create("No comments found for the specified target.", status: 404));
+                    return Ok(SuccessResponse<PaginatedCommentResponse>.Create(new PaginatedCommentResponse
+                    {
+                        Items = [],
+                        TotalItems = (int)totalCount,
+                        CurrentPage = clampedPage,
+                        PageSize = clampedPageSize
+                    }));
                 }
 
                 // Get paginated comments with user and attachment info
