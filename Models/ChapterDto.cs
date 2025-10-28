@@ -69,6 +69,9 @@ namespace AkariApi.Models
         [Required]
         public Guid MangaId { get; set; }
 
+        [Required]
+        public string MangaTitle { get; set; } = string.Empty;
+
         public float? LastChapter { get; set; }
 
         public float? NextChapter { get; set; }

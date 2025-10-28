@@ -767,7 +767,46 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                var rpcQuery = "SELECT get_chapter_by_manga_and_number(@_manga_id, @_number)";
+                var rpcQuery = @"
+                SELECT to_jsonb(t) FROM (
+                SELECT
+                    c.id,
+                    c.manga_id,
+                    c.title,
+                    c.number,
+                    (
+                        SELECT json_agg(
+                            json_build_object('value', ch.number::text, 'label', ch.title)
+                            ORDER BY ch.number DESC
+                        )
+                        FROM public.chapters ch
+                        WHERE ch.manga_id = c.manga_id
+                    ) AS chapters,
+                    c.pages,
+                    (
+                        SELECT ch_next.number
+                        FROM public.chapters ch_next
+                        WHERE ch_next.manga_id = c.manga_id AND ch_next.number > c.number
+                        ORDER BY ch_next.number ASC
+                        LIMIT 1
+                    ) AS next_chapter,
+                    (
+                        SELECT ch_prev.number
+                        FROM public.chapters ch_prev
+                        WHERE ch_prev.manga_id = c.manga_id AND ch_prev.number < c.number
+                        ORDER BY ch_prev.number DESC
+                        LIMIT 1
+                    ) AS last_chapter,
+                    c.images,
+                    m.title AS manga_title,
+                    m.type::text,
+                    m.mal_id,
+                    m.ani_id
+                FROM public.chapters c
+                JOIN public.manga m ON m.id = c.manga_id
+                WHERE c.manga_id = @_manga_id
+                    AND c.number = @_number
+                ) t";
                 string? content;
                 using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
                 {
