@@ -7,6 +7,7 @@ using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
 using Supabase.Postgrest;
 using System.Linq;
+using Npgsql;
 
 namespace AkariApi.Controllers
 {
@@ -18,11 +19,13 @@ namespace AkariApi.Controllers
     public class BookmarksController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;
+        private readonly PostgresService _postgresService;
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
-        public BookmarksController(SupabaseService supabaseService)
+        public BookmarksController(SupabaseService supabaseService, PostgresService postgresService)
         {
             _supabaseService = supabaseService;
+            _postgresService = postgresService;
         }
 
         /// <summary>
@@ -50,36 +53,68 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
-                var totalCount = await _supabaseService.Client
-                    .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userId)
-                    .Count(Supabase.Postgrest.Constants.CountType.Exact);
+                await _postgresService.OpenAsync();
 
-                var response = await _supabaseService.Client.Rpc("get_user_bookmarks", new { p_user_id = userId.ToString(), p_page = clampedPage, p_limit = clampedPageSize });
-
-                if (string.IsNullOrEmpty(response.Content))
+                // Get total count
+                long totalCount = 0;
+                using (var countCmd = new NpgsqlCommand("SELECT COUNT(*) FROM user_bookmarks WHERE user_id = @userId", _postgresService.Connection))
                 {
-                    return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
-                    {
-                        Items = new List<BookmarkResponse>(),
-                        TotalItems = totalCount,
-                        CurrentPage = clampedPage,
-                        PageSize = clampedPageSize
-                    }));
+                    countCmd.Parameters.AddWithValue("userId", userId);
+                    var result = await countCmd.ExecuteScalarAsync();
+                    totalCount = result != null ? (long)result : 0;
                 }
 
-                var bookmarks = JsonSerializer.Deserialize<List<BookmarkResponse>>(response.Content, _jsonOptions);
-
-                return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
+                // Get bookmarks using RPC
+                var rpcQuery = "SELECT get_user_bookmarks(@p_user_id, @p_page, @p_limit)";
+                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
                 {
-                    Items = bookmarks ?? new List<BookmarkResponse>(),
-                    TotalItems = totalCount,
-                    CurrentPage = clampedPage,
-                    PageSize = clampedPageSize
-                }));
+                    cmd.Parameters.AddWithValue("p_user_id", userId);
+                    cmd.Parameters.AddWithValue("p_page", clampedPage);
+                    cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
+
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (!await reader.ReadAsync())
+                        {
+                            await _postgresService.CloseAsync();
+                            return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
+                            {
+                                Items = new List<BookmarkResponse>(),
+                                TotalItems = (int)totalCount,
+                                CurrentPage = clampedPage,
+                                PageSize = clampedPageSize
+                            }));
+                        }
+
+                        var content = reader.GetString(0);
+                        if (string.IsNullOrEmpty(content))
+                        {
+                            await _postgresService.CloseAsync();
+                            return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
+                            {
+                                Items = new List<BookmarkResponse>(),
+                                TotalItems = (int)totalCount,
+                                CurrentPage = clampedPage,
+                                PageSize = clampedPageSize
+                            }));
+                        }
+
+                        var bookmarks = JsonSerializer.Deserialize<List<BookmarkResponse>>(content, _jsonOptions);
+
+                        await _postgresService.CloseAsync();
+                        return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
+                        {
+                            Items = bookmarks ?? new List<BookmarkResponse>(),
+                            TotalItems = (int)totalCount,
+                            CurrentPage = clampedPage,
+                            PageSize = clampedPageSize
+                        }));
+                    }
+                }
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve bookmarks", ex.Message));
             }
         }
@@ -105,15 +140,22 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
-                var count = await _supabaseService.Client
-                    .From<UserBookmarkUnreadDto>()
-                    .Where(b => b.UserId == userId)
-                    .Count(Supabase.Postgrest.Constants.CountType.Exact);
+                await _postgresService.OpenAsync();
 
-                return Ok(SuccessResponse<int>.Create(count));
+                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM user_bookmarks_unread WHERE user_id = @userId", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("userId", userId);
+
+                    var result = await cmd.ExecuteScalarAsync();
+                    var count = result != null ? (long)result : 0;
+
+                    await _postgresService.CloseAsync();
+                    return Ok(SuccessResponse<int>.Create((int)count));
+                }
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve unread bookmarks count", ex.Message));
             }
         }
@@ -141,16 +183,23 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
-                await _supabaseService.Client.Rpc("batch_update_user_bookmarks", new {
-                    p_user_id = userId,
-                    p_manga_ids = new Guid[] { mangaId },
-                    p_chapter_numbers = new double[] { request.ChapterNumber }
-                });
+                await _postgresService.OpenAsync();
 
+                using (var cmd = new NpgsqlCommand("SELECT batch_update_user_bookmarks(@p_user_id, @p_manga_ids, @p_chapter_numbers)", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("p_user_id", userId);
+                    cmd.Parameters.AddWithValue("p_manga_ids", new Guid[] { mangaId });
+                    cmd.Parameters.AddWithValue("p_chapter_numbers", new double[] { request.ChapterNumber });
+
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Bookmark updated successfully"));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 if (ex.Message.Contains("Chapter not found"))
                 {
                     return BadRequest(ErrorResponse.Create("Bad Request", ex.Message));
@@ -181,40 +230,59 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
-                var bookmark = await _supabaseService.Client
-                    .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userId && b.MangaId == mangaId)
-                    .Single();
+                await _postgresService.OpenAsync();
 
-                if (bookmark == null || bookmark.LastReadChapterId == null)
+                // Get bookmark
+                Guid? lastReadChapterId = null;
+                using (var cmd = new NpgsqlCommand("SELECT last_read_chapter_id FROM user_bookmarks WHERE user_id = @userId AND manga_id = @mangaId", _postgresService.Connection))
                 {
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    cmd.Parameters.AddWithValue("mangaId", mangaId);
+
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result != null && result != DBNull.Value)
+                    {
+                        lastReadChapterId = (Guid)result;
+                    }
+                }
+
+                if (lastReadChapterId == null)
+                {
+                    await _postgresService.CloseAsync();
                     return Ok(SuccessResponse<LastReadResponse>.Create(null!));
                 }
 
-                var chapter = await _supabaseService.Client
-                    .From<ChapterDto>()
-                    .Where(c => c.Id == bookmark.LastReadChapterId)
-                    .Single();
-
-                if (chapter == null)
+                // Get chapter details
+                using (var cmd = new NpgsqlCommand("SELECT id, number, title, pages, created_at, updated_at FROM chapters WHERE id = @chapterId", _postgresService.Connection))
                 {
-                    return Ok(SuccessResponse<LastReadResponse>.Create(null!));
+                    cmd.Parameters.AddWithValue("chapterId", lastReadChapterId);
+
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (!await reader.ReadAsync())
+                        {
+                            await _postgresService.CloseAsync();
+                            return Ok(SuccessResponse<LastReadResponse>.Create(null!));
+                        }
+
+                        var response = new LastReadResponse
+                        {
+                            Id = reader.GetGuid(0),
+                            Number = reader.GetFloat(1),
+                            Title = reader.GetString(2),
+                            Pages = reader.GetInt16(3),
+                            CreatedAt = reader.GetDateTime(4),
+                            UpdatedAt = reader.GetDateTime(5)
+                        };
+
+                        await _postgresService.CloseAsync();
+                        return Ok(SuccessResponse<LastReadResponse>.Create(response));
+                    }
                 }
-
-                var response = new LastReadResponse
-                {
-                    Id = chapter.Id,
-                    Number = chapter.Number,
-                    Title = chapter.Title,
-                    Pages = chapter.Pages,
-                    CreatedAt = chapter.CreatedAt,
-                    UpdatedAt = chapter.UpdatedAt
-                };
-
-                return Ok(SuccessResponse<LastReadResponse>.Create(response));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve last read chapter", ex.Message));
             }
         }
@@ -241,25 +309,37 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
-                var bookmark = await _supabaseService.Client
-                    .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userId && b.MangaId == mangaId)
-                    .Single();
+                await _postgresService.OpenAsync();
 
-                if (bookmark == null)
+                // Check if bookmark exists
+                using (var checkCmd = new NpgsqlCommand("SELECT id FROM user_bookmarks WHERE user_id = @userId AND manga_id = @mangaId", _postgresService.Connection))
                 {
-                    return NotFound(ErrorResponse.Create("Not Found", "Bookmark not found"));
+                    checkCmd.Parameters.AddWithValue("userId", userId);
+                    checkCmd.Parameters.AddWithValue("mangaId", mangaId);
+
+                    var result = await checkCmd.ExecuteScalarAsync();
+                    if (result == null)
+                    {
+                        await _postgresService.CloseAsync();
+                        return NotFound(ErrorResponse.Create("Not Found", "Bookmark not found"));
+                    }
                 }
 
-                await _supabaseService.Client
-                    .From<UserBookmarkDto>()
-                    .Where(b => b.UserId == userId && b.MangaId == mangaId)
-                    .Delete();
+                // Delete the bookmark
+                using (var deleteCmd = new NpgsqlCommand("DELETE FROM user_bookmarks WHERE user_id = @userId AND manga_id = @mangaId", _postgresService.Connection))
+                {
+                    deleteCmd.Parameters.AddWithValue("userId", userId);
+                    deleteCmd.Parameters.AddWithValue("mangaId", mangaId);
 
+                    await deleteCmd.ExecuteNonQueryAsync();
+                }
+
+                await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Bookmark deleted successfully"));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to delete bookmark", ex.Message));
             }
         }
@@ -296,16 +376,23 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
                 }
 
-                await _supabaseService.Client.Rpc("batch_update_user_bookmarks", new {
-                    p_user_id = userId,
-                    p_manga_ids = request.Items.Select(i => i.MangaId).ToArray(),
-                    p_chapter_numbers = request.Items.Select(i => i.ChapterNumber).ToArray()
-                });
+                await _postgresService.OpenAsync();
 
+                using (var cmd = new NpgsqlCommand("SELECT batch_update_user_bookmarks(@p_user_id, @p_manga_ids, @p_chapter_numbers)", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("p_user_id", userId);
+                    cmd.Parameters.AddWithValue("p_manga_ids", request.Items.Select(i => i.MangaId).ToArray());
+                    cmd.Parameters.AddWithValue("p_chapter_numbers", request.Items.Select(i => i.ChapterNumber).ToArray());
+
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Bookmarks updated successfully"));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 if (ex.Message.Contains("Chapter not found") || ex.Message.Contains("Array lengths"))
                 {
                     return BadRequest(ErrorResponse.Create("Bad Request", ex.Message));

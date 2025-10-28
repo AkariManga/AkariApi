@@ -5,6 +5,7 @@ using AkariApi.Attributes;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using AkariApi.Helpers;
+using Npgsql;
 
 namespace AkariApi.Controllers
 {
@@ -14,11 +15,11 @@ namespace AkariApi.Controllers
     [Produces("application/json")]
     public class GenreController : ControllerBase
     {
-        private readonly SupabaseService _supabaseService;
+        private readonly PostgresService _postgresService;
 
-        public GenreController(SupabaseService supabaseService)
+        public GenreController(PostgresService postgresService)
         {
-            _supabaseService = supabaseService;
+            _postgresService = postgresService;
         }
 
         /// <summary>
@@ -43,41 +44,62 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var totalCount = await _supabaseService.Client
-                    .From<MangaDto>()
-                    .Filter("genres", Supabase.Postgrest.Constants.Operator.Contains, new List<string> { normalizedName })
-                    .Count(Supabase.Postgrest.Constants.CountType.Exact);
-                var offset = (clampedPage - 1) * clampedPageSize;
-
-                var response = await _supabaseService.Client
-                    .From<MangaDto>()
-                    .Select("*")
-                    .Filter("genres", Supabase.Postgrest.Constants.Operator.Contains, new List<string> { normalizedName })
-                    .Order("updated_at", Supabase.Postgrest.Constants.Ordering.Descending)
-                    .Offset(offset)
-                    .Limit(clampedPageSize)
-                    .Get();
-
-                var mangaList = response.Models.Select(m => new MangaResponse
+                // Get total count
+                var countQuery = "SELECT COUNT(*) FROM manga WHERE @name = ANY(genres)";
+                long totalCountLong;
+                using (var countCmd = new NpgsqlCommand(countQuery, _postgresService.Connection))
                 {
-                    Id = m.Id,
-                    Title = m.Title,
-                    Cover = m.Cover,
-                    Description = m.Description,
-                    Status = m.Status,
-                    Type = m.Type,
-                    Authors = m.Authors,
-                    Genres = m.Genres,
-                    Views = m.Views,
-                    Score = m.Score,
-                    AlternativeTitles = m.AlternativeTitles,
-                    MalId = m.MalId,
-                    AniId = m.AniId,
-                    CreatedAt = m.CreatedAt,
-                    UpdatedAt = m.UpdatedAt,
-                }).ToList();
+                    countCmd.Parameters.AddWithValue("name", normalizedName);
+                    var result = await countCmd.ExecuteScalarAsync();
+                    totalCountLong = result != null ? (long)result : 0;
+                }
+                // Clamp to int.MaxValue to avoid overflow; adjust as needed
+                int totalCount = totalCountLong > int.MaxValue ? int.MaxValue : (int)totalCountLong;
+
+                // Get paginated results
+                var offset = (clampedPage - 1) * clampedPageSize;
+                var selectQuery = @"
+                    SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles
+                    FROM manga
+                    WHERE @name = ANY(genres)
+                    ORDER BY updated_at DESC
+                    LIMIT @limit OFFSET @offset";
+                var mangaList = new List<MangaResponse>();
+                using (var selectCmd = new NpgsqlCommand(selectQuery, _postgresService.Connection))
+                {
+                    selectCmd.Parameters.AddWithValue("name", normalizedName);
+                    selectCmd.Parameters.AddWithValue("limit", clampedPageSize);
+                    selectCmd.Parameters.AddWithValue("offset", offset);
+                    using (var reader = await selectCmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var manga = new MangaResponse
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(2),
+                                Cover = reader.GetString(3),
+                                Description = reader.GetString(4),
+                                Status = reader.GetString(5),
+                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
+                                Authors = (string[])reader.GetValue(8),
+                                Genres = (string[])reader.GetValue(9),
+                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),  // Safe cast with clamp
+                                Score = reader.GetDecimal(11),
+                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
+                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
+                                CreatedAt = reader.GetDateTime(14),
+                                UpdatedAt = reader.GetDateTime(15),
+                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
+                            };
+                            mangaList.Add(manga);
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
 
                 return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                 {
@@ -89,7 +111,8 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, ErrorResponse.Create("Failed to retrieve latest manga", ex.Message));
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga by genre", ex.Message));
             }
         }
     }

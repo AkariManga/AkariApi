@@ -5,6 +5,7 @@ using AkariApi.Attributes;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
+using Npgsql;
 
 namespace AkariApi.Controllers
 {
@@ -15,11 +16,13 @@ namespace AkariApi.Controllers
     public class CommentsController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;
+        private readonly PostgresService _postgresService;
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
-        public CommentsController(SupabaseService supabaseService)
+        public CommentsController(SupabaseService supabaseService, PostgresService postgresService)
         {
             _supabaseService = supabaseService;
+            _postgresService = postgresService;
         }
 
         /// <summary>
@@ -37,75 +40,106 @@ namespace AkariApi.Controllers
         public async Task<IActionResult> GetComments(Guid id, int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
+            var offset = (clampedPage - 1) * clampedPageSize;
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var totalCount = await _supabaseService.Client
-                    .From<CommentDto>()
-                    .Where(c => c.ParentId == null)
-                    .Where(c => c.TargetId == id)
-                    .Count(Supabase.Postgrest.Constants.CountType.Exact);
+                // Get total count
+                var countQuery = @"
+                    SELECT COUNT(*)
+                    FROM comments
+                    WHERE parent_id IS NULL AND target_id = @target_id";
+
+                long totalCount;
+                using (var cmd = new NpgsqlCommand(countQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@target_id", id);
+                    var result = await cmd.ExecuteScalarAsync();
+                    totalCount = result != null ? (long)result : 0;
+                }
 
                 if (totalCount == 0)
                 {
                     return NotFound(ErrorResponse.Create("No comments found for the specified target.", status: 404));
                 }
 
-                var response = await _supabaseService.Client
-                    .Rpc("get_comments_for_target", new { target_id = id, page_number = clampedPage, page_size = clampedPageSize });
+                // Get paginated comments with user and attachment info
+                var commentsQuery = @"
+                    SELECT
+                        c.id, c.target_type, c.target_id, c.user_id, c.parent_id, c.content,
+                        c.created_at, c.updated_at, c.edited, c.deleted, c.upvotes, c.downvotes,
+                        c.attachment_id,
+                        u.username, u.display_name,
+                        up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
+                        up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at,
+                        COALESCE(reply_counts.reply_count, 0) as reply_count
+                    FROM comments c
+                    JOIN profiles u ON c.user_id = u.id
+                    LEFT JOIN uploads up ON c.attachment_id = up.id
+                    LEFT JOIN (
+                        SELECT parent_id, COUNT(*) as reply_count
+                        FROM comments
+                        WHERE deleted = false
+                        GROUP BY parent_id
+                    ) reply_counts ON c.id = reply_counts.parent_id
+                    WHERE c.parent_id IS NULL AND c.target_id = @target_id
+                    ORDER BY c.created_at DESC
+                    LIMIT @limit OFFSET @offset";
 
-                if (string.IsNullOrEmpty(response.Content))
+                var comments = new List<CommentResponse>();
+                using (var cmd = new NpgsqlCommand(commentsQuery, _postgresService.Connection))
                 {
-                    return Ok(SuccessResponse<PaginatedCommentResponse>.Create(new PaginatedCommentResponse
+                    cmd.Parameters.AddWithValue("@target_id", id);
+                    cmd.Parameters.AddWithValue("@limit", clampedPageSize);
+                    cmd.Parameters.AddWithValue("@offset", offset);
+
+                    using (var reader = await cmd.ExecuteReaderAsync())
                     {
-                        Items = new List<CommentResponse>(),
-                        TotalItems = totalCount,
-                        CurrentPage = clampedPage,
-                        PageSize = clampedPageSize
-                    }));
+                        while (await reader.ReadAsync())
+                        {
+                            var comment = new CommentResponse
+                            {
+                                Id = reader.GetGuid(reader.GetOrdinal("id")),
+                                TargetType = reader.GetString(reader.GetOrdinal("target_type")),
+                                TargetId = reader.GetGuid(reader.GetOrdinal("target_id")),
+                                UserProfile = new UserProfile
+                                {
+                                    Id = reader.GetGuid(reader.GetOrdinal("user_id")),
+                                    Username = reader.GetString(reader.GetOrdinal("username")),
+                                    DisplayName = reader.GetString(reader.GetOrdinal("display_name")),
+                                },
+                                ParentId = reader.IsDBNull(reader.GetOrdinal("parent_id")) ? (Guid?)null : reader.GetGuid(reader.GetOrdinal("parent_id")),
+                                Content = reader.GetString(reader.GetOrdinal("content")),
+                                CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
+                                UpdatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at")),
+                                Edited = reader.GetBoolean(reader.GetOrdinal("edited")),
+                                Deleted = reader.GetBoolean(reader.GetOrdinal("deleted")),
+                                Upvotes = reader.GetInt32(reader.GetOrdinal("upvotes")),
+                                Downvotes = reader.GetInt32(reader.GetOrdinal("downvotes")),
+                                ReplyCount = reader.GetInt64(reader.GetOrdinal("reply_count")),
+                                Attachment = reader.IsDBNull(reader.GetOrdinal("attachment_id")) ? null : new UploadResponse
+                                {
+                                    Id = reader.GetGuid(reader.GetOrdinal("attachment_id")),
+                                    UserId = reader.GetGuid(reader.GetOrdinal("user_id")).ToString(),
+                                    Md5Hash = reader.GetString(reader.GetOrdinal("upload_md5_hash")),
+                                    Size = reader.GetInt64(reader.GetOrdinal("upload_size")),
+                                    Url = reader.GetString(reader.GetOrdinal("upload_url")),
+                                    UsageCount = reader.GetInt32(reader.GetOrdinal("upload_usage_count")),
+                                    Tags = reader.GetFieldValue<string[]>(reader.GetOrdinal("upload_tags")),
+                                    CreatedAt = reader.GetDateTime(reader.GetOrdinal("upload_created_at"))
+                                }
+                            };
+                            comments.Add(comment);
+                        }
+                    }
                 }
-
-                var commentsData = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(response.Content, _jsonOptions) ?? new List<Dictionary<string, JsonElement>>();
-
-                var comments = commentsData.Select(c => new CommentResponse
-                {
-                    Id = c["id"].GetGuid(),
-                    TargetType = c["target_type"].GetString() ?? "",
-                    TargetId = c["target_id"].GetGuid(),
-                    UserProfile = new UserProfile
-                    {
-                        Id = c["user_id"].GetGuid(),
-                        Username = c["username"].GetString() ?? "",
-                        DisplayName = c["display_name"].GetString() ?? "",
-                    },
-                    ParentId = c["parent_id"].ValueKind != JsonValueKind.Null ? c["parent_id"].GetGuid() : (Guid?)null,
-                    Content = c["content"].GetString() ?? "",
-                    CreatedAt = c["created_at"].GetDateTimeOffset(),
-                    UpdatedAt = c["updated_at"].GetDateTimeOffset(),
-                    Edited = c["edited"].GetBoolean(),
-                    Deleted = c["deleted"].GetBoolean(),
-                    Upvotes = c["upvotes"].GetInt32(),
-                    Downvotes = c["downvotes"].GetInt32(),
-                    ReplyCount = c["reply_count"].GetInt64(),
-                    Attachment = c["upload_id"].ValueKind != JsonValueKind.Null ? new UploadResponse
-                    {
-                        Id = c["upload_id"].GetGuid(),
-                        UserId = c["upload_user_id"].GetGuid().ToString(),
-                        Md5Hash = c["upload_md5_hash"].GetString() ?? "",
-                        Size = c["upload_size"].GetInt64(),
-                        Url = c["upload_url"].GetString() ?? "",
-                        UsageCount = c["upload_usage_count"].GetInt32(),
-                        Tags = c["upload_tags"].EnumerateArray().Select(x => x.GetString() ?? "").ToArray(),
-                        CreatedAt = c["upload_created_at"].GetDateTimeOffset().DateTime
-                    } : null,
-                }).ToList();
 
                 return Ok(SuccessResponse<PaginatedCommentResponse>.Create(new PaginatedCommentResponse
                 {
                     Items = comments,
-                    TotalItems = totalCount,
+                    TotalItems = (int)totalCount,
                     CurrentPage = clampedPage,
                     PageSize = clampedPageSize
                 }));
@@ -136,17 +170,33 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var response = await _supabaseService.Client
-                    .Rpc("get_user_comment_votes_by_target", new { user_id = userId, target_id = id });
+                var query = @"
+                    SELECT cv.comment_id, cv.value, c.target_id
+                    FROM comment_votes cv
+                    JOIN comments c ON cv.comment_id = c.id
+                    WHERE cv.user_id = @user_id AND c.target_id = @target_id";
 
-                if (string.IsNullOrEmpty(response.Content))
+                var votes = new List<CommentVoteResponse>();
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
-                    return Ok(SuccessResponse<List<CommentVoteResponse>>.Create(new List<CommentVoteResponse>()));
-                }
+                    cmd.Parameters.AddWithValue("@user_id", userId);
+                    cmd.Parameters.AddWithValue("@target_id", id);
 
-                var votes = JsonSerializer.Deserialize<List<CommentVoteResponse>>(response.Content, _jsonOptions) ?? new List<CommentVoteResponse>();
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            votes.Add(new CommentVoteResponse
+                            {
+                                CommentId = reader.GetGuid(reader.GetOrdinal("comment_id")),
+                                Value = reader.GetInt16(reader.GetOrdinal("value")),
+                                TargetId = reader.GetGuid(reader.GetOrdinal("target_id"))
+                            });
+                        }
+                    }
+                }
 
                 return Ok(SuccessResponse<List<CommentVoteResponse>>.Create(votes));
             }
@@ -170,15 +220,83 @@ namespace AkariApi.Controllers
         {
             try
             {
-                await _supabaseService.InitializeAsync();
-                var response = await _supabaseService.Client.Rpc("get_comment_replies_recursive", new { p_comment_id = commentId });
+                await _postgresService.OpenAsync();
 
-                if (string.IsNullOrEmpty(response.Content))
+                var query = @"
+                    WITH RECURSIVE comment_tree AS (
+                        SELECT
+                            c.id, c.target_type, c.target_id, c.user_id, c.parent_id, c.content,
+                            c.created_at, c.updated_at, c.edited, c.deleted, c.upvotes, c.downvotes,
+                            c.attachment_id,
+                            u.username, u.display_name,
+                            up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
+                            up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at
+                        FROM comments c
+                        JOIN profiles u ON c.user_id = u.id
+                        LEFT JOIN uploads up ON c.attachment_id = up.id
+                        WHERE c.id = @comment_id
+
+                        UNION ALL
+
+                        SELECT
+                            c.id, c.target_type, c.target_id, c.user_id, c.parent_id, c.content,
+                            c.created_at, c.updated_at, c.edited, c.deleted, c.upvotes, c.downvotes,
+                            c.attachment_id,
+                            u.username, u.display_name,
+                            up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
+                            up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at
+                        FROM comments c
+                        JOIN profiles u ON c.user_id = u.id
+                        LEFT JOIN uploads up ON c.attachment_id = up.id
+                        INNER JOIN comment_tree ct ON c.parent_id = ct.id
+                    )
+                    SELECT * FROM comment_tree WHERE id != @comment_id ORDER BY created_at ASC";
+
+                var allReplies = new List<CommentWithRepliesResponse>();
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
-                    return Ok(SuccessResponse<List<CommentWithRepliesResponse>>.Create(new List<CommentWithRepliesResponse>()));
-                }
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
 
-                var allReplies = JsonSerializer.Deserialize<List<CommentWithRepliesResponse>>(response.Content, _jsonOptions) ?? new List<CommentWithRepliesResponse>();
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var reply = new CommentWithRepliesResponse
+                            {
+                                Id = reader.GetGuid(reader.GetOrdinal("id")),
+                                TargetType = reader.GetString(reader.GetOrdinal("target_type")),
+                                TargetId = reader.GetGuid(reader.GetOrdinal("target_id")),
+                                UserProfile = new UserProfile
+                                {
+                                    Id = reader.GetGuid(reader.GetOrdinal("user_id")),
+                                    Username = reader.GetString(reader.GetOrdinal("username")),
+                                    DisplayName = reader.GetString(reader.GetOrdinal("display_name")),
+                                },
+                                ParentId = reader.IsDBNull(reader.GetOrdinal("parent_id")) ? (Guid?)null : reader.GetGuid(reader.GetOrdinal("parent_id")),
+                                Content = reader.GetString(reader.GetOrdinal("content")),
+                                CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
+                                UpdatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at")),
+                                Edited = reader.GetBoolean(reader.GetOrdinal("edited")),
+                                Deleted = reader.GetBoolean(reader.GetOrdinal("deleted")),
+                                Upvotes = reader.GetInt32(reader.GetOrdinal("upvotes")),
+                                Downvotes = reader.GetInt32(reader.GetOrdinal("downvotes")),
+                                Attachment = reader.IsDBNull(reader.GetOrdinal("attachment_id")) ? null : new UploadResponse
+                                {
+                                    Id = reader.GetGuid(reader.GetOrdinal("attachment_id")),
+                                    UserId = reader.GetGuid(reader.GetOrdinal("user_id")).ToString(),
+                                    Md5Hash = reader.GetString(reader.GetOrdinal("upload_md5_hash")),
+                                    Size = reader.GetInt64(reader.GetOrdinal("upload_size")),
+                                    Url = reader.GetString(reader.GetOrdinal("upload_url")),
+                                    UsageCount = reader.GetInt32(reader.GetOrdinal("upload_usage_count")),
+                                    Tags = reader.GetFieldValue<string[]>(reader.GetOrdinal("upload_tags")),
+                                    CreatedAt = reader.GetDateTime(reader.GetOrdinal("upload_created_at"))
+                                },
+                                Replies = new List<CommentWithRepliesResponse>()
+                            };
+                            allReplies.Add(reply);
+                        }
+                    }
+                }
 
                 var replies = BuildReplyTree(allReplies, commentId);
                 return Ok(SuccessResponse<List<CommentWithRepliesResponse>>.Create(replies));
@@ -224,52 +342,74 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var comment = await _supabaseService.Client
-                    .From<CommentDto>()
-                    .Where(c => c.Id == commentId)
-                    .Single();
+                // Check if comment exists and is not deleted
+                var commentQuery = "SELECT deleted FROM comments WHERE id = @comment_id";
+                bool isDeleted;
+                using (var cmd = new NpgsqlCommand(commentQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result == null)
+                        return NotFound(ErrorResponse.Create("Comment not found", status: 404));
+                    isDeleted = (bool)result;
+                }
 
-                if (comment == null)
-                    return NotFound(ErrorResponse.Create("Comment not found", status: 404));
-
-                if (comment.Deleted)
+                if (isDeleted)
                     return BadRequest(ErrorResponse.Create("Cannot vote on deleted comment"));
 
                 // Check if user already voted
-                var existingVote = await _supabaseService.Client
-                    .From<CommentVoteDto>()
-                    .Where(v => v.CommentId == commentId && v.UserId == userId)
-                    .Single();
+                var existingVoteQuery = "SELECT value FROM comment_votes WHERE comment_id = @comment_id AND user_id = @user_id";
+                short? existingVoteValue = null;
+                using (var cmd = new NpgsqlCommand(existingVoteQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
+                    cmd.Parameters.AddWithValue("@user_id", userId);
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result != null)
+                        existingVoteValue = (short)result;
+                }
 
                 if (request.Value == 0)
                 {
                     // Remove the vote if it exists
-                    if (existingVote != null)
+                    if (existingVoteValue.HasValue)
                     {
-                        await _supabaseService.Client.From<CommentVoteDto>().Delete(existingVote);
+                        var deleteQuery = "DELETE FROM comment_votes WHERE comment_id = @comment_id AND user_id = @user_id";
+                        using (var cmd = new NpgsqlCommand(deleteQuery, _postgresService.Connection))
+                        {
+                            cmd.Parameters.AddWithValue("@comment_id", commentId);
+                            cmd.Parameters.AddWithValue("@user_id", userId);
+                            await cmd.ExecuteNonQueryAsync();
+                        }
                     }
                     return Ok(SuccessResponse<string>.Create("Vote removed successfully"));
                 }
                 else
                 {
                     // Insert or update the vote
-                    if (existingVote != null)
+                    if (existingVoteValue.HasValue)
                     {
-                        existingVote.Value = request.Value;
-                        await _supabaseService.Client.From<CommentVoteDto>().Update(existingVote);
+                        var updateQuery = "UPDATE comment_votes SET value = @value WHERE comment_id = @comment_id AND user_id = @user_id";
+                        using (var cmd = new NpgsqlCommand(updateQuery, _postgresService.Connection))
+                        {
+                            cmd.Parameters.AddWithValue("@comment_id", commentId);
+                            cmd.Parameters.AddWithValue("@user_id", userId);
+                            cmd.Parameters.AddWithValue("@value", request.Value);
+                            await cmd.ExecuteNonQueryAsync();
+                        }
                     }
                     else
                     {
-                        var vote = new CommentVoteDto
+                        var insertQuery = "INSERT INTO comment_votes (comment_id, user_id, value) VALUES (@comment_id, @user_id, @value)";
+                        using (var cmd = new NpgsqlCommand(insertQuery, _postgresService.Connection))
                         {
-                            CommentId = commentId,
-                            UserId = userId,
-                            Value = request.Value
-                        };
-
-                        await _supabaseService.Client.From<CommentVoteDto>().Insert(vote);
+                            cmd.Parameters.AddWithValue("@comment_id", commentId);
+                            cmd.Parameters.AddWithValue("@user_id", userId);
+                            cmd.Parameters.AddWithValue("@value", request.Value);
+                            await cmd.ExecuteNonQueryAsync();
+                        }
                     }
                     return Ok(SuccessResponse<string>.Create("Vote recorded successfully"));
                 }
@@ -303,90 +443,108 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
                 if (request.ParentId.HasValue)
                 {
-                    var parentComment = await _supabaseService.Client
-                        .From<CommentDto>()
-                        .Where(c => c.Id == request.ParentId.Value && c.TargetId == id)
-                        .Single();
-
-                    if (parentComment == null)
-                        return BadRequest(ErrorResponse.Create("Invalid parent comment"));
-                    if (parentComment.Deleted)
-                        return BadRequest(ErrorResponse.Create("Cannot reply to a deleted comment"));
-                }
-
-                var comment = new CommentDto
-                {
-                    TargetType = request.TargetType,
-                    TargetId = id,
-                    UserId = userId,
-                    ParentId = request.ParentId,
-                    Content = request.Content,
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    Edited = false,
-                    Deleted = false,
-                    Upvotes = 0,
-                    Downvotes = 0,
-                    AttachmentId = request.AttachmentId
-                };
-
-                var response = await _supabaseService.Client.From<CommentDto>().Insert(comment);
-
-                var createdComment = response.Models.FirstOrDefault();
-                if (createdComment == null)
-                    return StatusCode(500, ErrorResponse.Create("Failed to create comment"));
-
-                var userProfile = await _supabaseService.Client.From<ProfileDto>().Where(p => p.Id == userId).Single();
-
-                if (userProfile == null)
-                    return StatusCode(500, ErrorResponse.Create("Failed to retrieve user profile"));
-
-                UploadResponse? attachment = null;
-                if (createdComment.AttachmentId.HasValue)
-                {
-                    var upload = await _supabaseService.Client.From<UploadDto>().Where(u => u.Id == createdComment.AttachmentId.Value).Single();
-                    if (upload != null)
+                    var parentQuery = "SELECT deleted FROM comments WHERE id = @parent_id AND target_id = @target_id";
+                    using (var cmd = new NpgsqlCommand(parentQuery, _postgresService.Connection))
                     {
-                        attachment = new UploadResponse
-                        {
-                            Id = upload.Id,
-                            UserId = upload.UserId ?? "",
-                            Md5Hash = upload.Md5Hash ?? "",
-                            Size = upload.Size,
-                            Url = upload.Url ?? "",
-                            UsageCount = upload.UsageCount,
-                            Tags = upload.Tags,
-                            CreatedAt = upload.CreatedAt
-                        };
+                        cmd.Parameters.AddWithValue("@parent_id", request.ParentId.Value);
+                        cmd.Parameters.AddWithValue("@target_id", id);
+                        var result = await cmd.ExecuteScalarAsync();
+                        if (result == null)
+                            return BadRequest(ErrorResponse.Create("Invalid parent comment"));
+                        if ((bool)result)
+                            return BadRequest(ErrorResponse.Create("Cannot reply to a deleted comment"));
                     }
                 }
 
-                var commentResponse = new CommentResponse
+                var insertQuery = @"
+                    INSERT INTO comments (target_type, target_id, user_id, parent_id, content, created_at, updated_at, edited, deleted, upvotes, downvotes, attachment_id)
+                    VALUES (@target_type, @target_id, @user_id, @parent_id, @content, @created_at, @updated_at, @edited, @deleted, @upvotes, @downvotes, @attachment_id)
+                    RETURNING id";
+
+                Guid commentId;
+                using (var cmd = new NpgsqlCommand(insertQuery, _postgresService.Connection))
                 {
-                    Id = createdComment.Id,
-                    TargetType = createdComment.TargetType,
-                    TargetId = createdComment.TargetId,
-                    UserProfile = new UserProfile
+                    cmd.Parameters.AddWithValue("@target_type", request.TargetType);
+                    cmd.Parameters.AddWithValue("@target_id", id);
+                    cmd.Parameters.AddWithValue("@user_id", userId);
+                    cmd.Parameters.AddWithValue("@parent_id", request.ParentId.HasValue ? (object)request.ParentId.Value : DBNull.Value);
+                    cmd.Parameters.AddWithValue("@content", request.Content);
+                    cmd.Parameters.AddWithValue("@created_at", DateTimeOffset.UtcNow);
+                    cmd.Parameters.AddWithValue("@updated_at", DateTimeOffset.UtcNow);
+                    cmd.Parameters.AddWithValue("@edited", false);
+                    cmd.Parameters.AddWithValue("@deleted", false);
+                    cmd.Parameters.AddWithValue("@upvotes", 0);
+                    cmd.Parameters.AddWithValue("@downvotes", 0);
+                    cmd.Parameters.AddWithValue("@attachment_id", request.AttachmentId.HasValue ? (object)request.AttachmentId.Value : DBNull.Value);
+
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result == null)
+                        return StatusCode(500, ErrorResponse.Create("Failed to create comment"));
+                    commentId = (Guid)result;
+                }
+
+                // Fetch the created comment with user and attachment info
+                var fetchQuery = @"
+                    SELECT
+                        c.id, c.target_type, c.target_id, c.user_id, c.parent_id, c.content,
+                        c.created_at, c.updated_at, c.edited, c.deleted, c.upvotes, c.downvotes,
+                        c.attachment_id,
+                        u.username, u.display_name,
+                        up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
+                        up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at
+                    FROM comments c
+                    JOIN profiles u ON c.user_id = u.id
+                    LEFT JOIN uploads up ON c.attachment_id = up.id
+                    WHERE c.id = @comment_id";
+
+                CommentResponse commentResponse;
+                using (var cmd = new NpgsqlCommand(fetchQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
+
+                    using (var reader = await cmd.ExecuteReaderAsync())
                     {
-                        Id = userProfile.Id,
-                        Username = userProfile.Username,
-                        DisplayName = userProfile.DisplayName
-                    },
-                    ParentId = createdComment.ParentId,
-                    Content = createdComment.Content,
-                    CreatedAt = createdComment.CreatedAt,
-                    UpdatedAt = createdComment.UpdatedAt,
-                    Edited = createdComment.Edited,
-                    Deleted = createdComment.Deleted,
-                    Upvotes = createdComment.Upvotes,
-                    Downvotes = createdComment.Downvotes,
-                    ReplyCount = 0,
-                    Attachment = attachment
-                };
+                        if (!await reader.ReadAsync())
+                            return StatusCode(500, ErrorResponse.Create("Failed to retrieve created comment"));
+
+                        commentResponse = new CommentResponse
+                        {
+                            Id = reader.GetGuid(reader.GetOrdinal("id")),
+                            TargetType = reader.GetString(reader.GetOrdinal("target_type")),
+                            TargetId = reader.GetGuid(reader.GetOrdinal("target_id")),
+                            UserProfile = new UserProfile
+                            {
+                                Id = reader.GetGuid(reader.GetOrdinal("user_id")),
+                                Username = reader.GetString(reader.GetOrdinal("username")),
+                                DisplayName = reader.GetString(reader.GetOrdinal("display_name")),
+                            },
+                            ParentId = reader.IsDBNull(reader.GetOrdinal("parent_id")) ? (Guid?)null : reader.GetGuid(reader.GetOrdinal("parent_id")),
+                            Content = reader.GetString(reader.GetOrdinal("content")),
+                            CreatedAt = reader.GetDateTime(reader.GetOrdinal("created_at")),
+                            UpdatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at")),
+                            Edited = reader.GetBoolean(reader.GetOrdinal("edited")),
+                            Deleted = reader.GetBoolean(reader.GetOrdinal("deleted")),
+                            Upvotes = reader.GetInt32(reader.GetOrdinal("upvotes")),
+                            Downvotes = reader.GetInt32(reader.GetOrdinal("downvotes")),
+                            ReplyCount = 0,
+                            Attachment = reader.IsDBNull(reader.GetOrdinal("attachment_id")) ? null : new UploadResponse
+                            {
+                                Id = reader.GetGuid(reader.GetOrdinal("attachment_id")),
+                                UserId = reader.GetGuid(reader.GetOrdinal("user_id")).ToString(),
+                                Md5Hash = reader.GetString(reader.GetOrdinal("upload_md5_hash")),
+                                Size = reader.GetInt64(reader.GetOrdinal("upload_size")),
+                                Url = reader.GetString(reader.GetOrdinal("upload_url")),
+                                UsageCount = reader.GetInt32(reader.GetOrdinal("upload_usage_count")),
+                                Tags = reader.GetFieldValue<string[]>(reader.GetOrdinal("upload_tags")),
+                                CreatedAt = reader.GetDateTime(reader.GetOrdinal("upload_created_at"))
+                            }
+                        };
+                    }
+                }
 
                 return Created("", SuccessResponse<CommentResponse>.Create(commentResponse));
             }
@@ -420,27 +578,38 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var comment = await _supabaseService.Client
-                    .From<CommentDto>()
-                    .Where(c => c.Id == commentId)
-                    .Single();
+                // Check if comment exists and user owns it
+                var checkQuery = "SELECT user_id, deleted FROM comments WHERE id = @comment_id";
+                Guid? ownerId = null;
+                bool? isDeleted = null;
+                using (var cmd = new NpgsqlCommand(checkQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (!await reader.ReadAsync())
+                            return NotFound(ErrorResponse.Create("Comment not found", status: 404));
+                        ownerId = reader.GetGuid(reader.GetOrdinal("user_id"));
+                        isDeleted = reader.GetBoolean(reader.GetOrdinal("deleted"));
+                    }
+                }
 
-                if (comment == null)
-                    return NotFound(ErrorResponse.Create("Comment not found", status: 404));
-
-                if (comment.UserId != userId)
+                if (ownerId != userId)
                     return StatusCode(403, ErrorResponse.Create("Forbidden", "You can only edit your own comments"));
 
-                if (comment.Deleted)
+                if (isDeleted.Value)
                     return BadRequest(ErrorResponse.Create("Cannot edit deleted comment"));
 
-                comment.Content = request.Content;
-                comment.UpdatedAt = DateTimeOffset.UtcNow;
-                comment.Edited = true;
-
-                await _supabaseService.Client.From<CommentDto>().Update(comment);
+                var updateQuery = "UPDATE comments SET content = @content, updated_at = @updated_at, edited = true WHERE id = @comment_id";
+                using (var cmd = new NpgsqlCommand(updateQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
+                    cmd.Parameters.AddWithValue("@content", request.Content);
+                    cmd.Parameters.AddWithValue("@updated_at", DateTimeOffset.UtcNow);
+                    await cmd.ExecuteNonQueryAsync();
+                }
 
                 return Ok(SuccessResponse<string>.Create("Comment updated successfully"));
             }
@@ -472,25 +641,31 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var comment = await _supabaseService.Client
-                    .From<CommentDto>()
-                    .Where(c => c.Id == commentId)
-                    .Single();
+                // Check if comment exists and user owns it
+                var checkQuery = "SELECT user_id FROM comments WHERE id = @comment_id";
+                Guid? ownerId = null;
+                using (var cmd = new NpgsqlCommand(checkQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result == null)
+                        return NotFound(ErrorResponse.Create("Comment not found", status: 404));
+                    ownerId = (Guid)result;
+                }
 
-                if (comment == null)
-                    return NotFound(ErrorResponse.Create("Comment not found", status: 404));
-
-                if (comment.UserId != userId)
+                if (ownerId != userId)
                     return StatusCode(403, ErrorResponse.Create("Forbidden", "You can only delete your own comments"));
 
                 // Soft delete
-                comment.Deleted = true;
-                comment.Content = "[deleted]";
-                comment.UpdatedAt = DateTimeOffset.UtcNow;
-
-                await _supabaseService.Client.From<CommentDto>().Update(comment);
+                var updateQuery = "UPDATE comments SET deleted = true, content = '[deleted]', updated_at = @updated_at WHERE id = @comment_id";
+                using (var cmd = new NpgsqlCommand(updateQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
+                    cmd.Parameters.AddWithValue("@updated_at", DateTimeOffset.UtcNow);
+                    await cmd.ExecuteNonQueryAsync();
+                }
 
                 return Ok(SuccessResponse<string>.Create("Comment deleted successfully"));
             }

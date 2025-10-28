@@ -57,8 +57,8 @@ builder.Services.AddApiVersioning(options =>
 builder.Services.AddRateLimiter(_ => _
     .AddFixedWindowLimiter(policyName: "fixed", options =>
     {
-        options.PermitLimit = 5;
-        options.Window = TimeSpan.FromSeconds(10);
+        options.PermitLimit = 10;
+        options.Window = TimeSpan.FromSeconds(5);
         options.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
         options.QueueLimit = 2;
     })
@@ -90,7 +90,7 @@ if (string.IsNullOrEmpty(serviceRoleKey))
 var options = new SupabaseOptions
 {
     AutoRefreshToken = false,
-    AutoConnectRealtime = true,
+    AutoConnectRealtime = false,
 };
 var anonClient = new Supabase.Client(supabaseUrl, anonKey, options);
 builder.Services.AddSingleton(anonClient);
@@ -99,6 +99,7 @@ var adminClient = new Supabase.Client(supabaseUrl, serviceRoleKey, options);
 builder.Services.AddSingleton(adminClient);
 
 builder.Services.AddScoped<AkariApi.Services.SupabaseService>();
+builder.Services.AddScoped<AkariApi.Services.PostgresService>();
 
 builder.Services.AddCors(options =>
 {

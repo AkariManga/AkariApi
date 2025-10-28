@@ -5,6 +5,8 @@ using AkariApi.Attributes;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
+using Npgsql;
+using Microsoft.Extensions.Logging;
 
 namespace AkariApi.Controllers
 {
@@ -15,11 +17,13 @@ namespace AkariApi.Controllers
     public class MangaController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;
+        private readonly PostgresService _postgresService;
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
-        public MangaController(SupabaseService supabaseService)
+        public MangaController(SupabaseService supabaseService, PostgresService postgresService)
         {
             _supabaseService = supabaseService;
+            _postgresService = postgresService;
         }
 
         /// <summary>
@@ -50,19 +54,34 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var rpcResponse = await _supabaseService.Client.Rpc("get_manga", new
+                var rpcQuery = "SELECT json_agg(row_to_json(t)) FROM get_manga(@p_authors, @p_genres, @p_limit, @p_offset, @p_sort_by, @p_query) t";
+                string? content;
+                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
                 {
-                    p_limit = clampedPageSize,
-                    p_offset = offset,
-                    p_sort_by = sortBy,
-                    p_genres = genres,
-                    p_authors = authors,
-                    p_query = query,
-                });
+                    cmd.Parameters.AddWithValue("p_authors", authors == null || authors.Length == 0 ? DBNull.Value : authors);
+                    cmd.Parameters.AddWithValue("p_genres", genres == null || genres.Length == 0 ? DBNull.Value : genres);
+                    cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
+                    cmd.Parameters.AddWithValue("p_offset", offset);
+                    cmd.Parameters.AddWithValue("p_sort_by", sortBy);
+                    cmd.Parameters.AddWithValue("p_query", string.IsNullOrWhiteSpace(query) ? DBNull.Value : query);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            content = reader.IsDBNull(0) ? "[]" : reader.GetString(0);
+                        }
+                        else
+                        {
+                            content = null;
+                        }
+                    }
+                }
 
-                if (string.IsNullOrEmpty(rpcResponse.Content))
+                await _postgresService.CloseAsync();
+
+                if (string.IsNullOrEmpty(content))
                 {
                     return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                     {
@@ -73,7 +92,15 @@ namespace AkariApi.Controllers
                     }));
                 }
 
-                var rpcResults = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(rpcResponse.Content, _jsonOptions);
+                List<Dictionary<string, JsonElement>>? rpcResults = null;
+                try
+                {
+                    rpcResults = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(content, _jsonOptions);
+                }
+                catch (JsonException)
+                {
+                    return StatusCode(500, ErrorResponse.Create("Failed to parse manga list data", "Invalid JSON response from database"));
+                }
 
                 var mangaList = new List<MangaResponse>();
                 long totalCount = 0;
@@ -118,6 +145,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga list", ex.Message));
             }
         }
@@ -137,11 +165,31 @@ namespace AkariApi.Controllers
         {
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var response = await _supabaseService.AdminClient.Rpc("get_manga_views_recent", new { p_days = days, p_limit = limit, p_offset = offset });
+                var rpcQuery = "SELECT json_agg(row_to_json(t)) FROM get_manga_views_recent(@p_days, @p_limit, @p_offset) t";
+                string? content;
+                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("p_days", days);
+                    cmd.Parameters.AddWithValue("p_limit", limit);
+                    cmd.Parameters.AddWithValue("p_offset", offset);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            content = reader.IsDBNull(0) ? "[]" : reader.GetString(0);
+                        }
+                        else
+                        {
+                            content = null;
+                        }
+                    }
+                }
 
-                if (string.IsNullOrEmpty(response.Content))
+                await _postgresService.CloseAsync();
+
+                if (string.IsNullOrEmpty(content))
                 {
                     return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                     {
@@ -152,7 +200,15 @@ namespace AkariApi.Controllers
                     }));
                 }
 
-                var popularManga = JsonSerializer.Deserialize<List<PopularMangaResponse>>(response.Content, _jsonOptions);
+                List<PopularMangaResponse>? popularManga = null;
+                try
+                {
+                    popularManga = JsonSerializer.Deserialize<List<PopularMangaResponse>>(content, _jsonOptions);
+                }
+                catch (JsonException)
+                {
+                    return StatusCode(500, ErrorResponse.Create("Failed to parse popular manga data", "Invalid JSON response from database"));
+                }
 
                 var mangaList = (popularManga ?? new List<PopularMangaResponse>()).Select(p => new MangaResponse
                 {
@@ -184,6 +240,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve popular manga", ex.Message));
             }
         }
@@ -202,19 +259,84 @@ namespace AkariApi.Controllers
         {
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var response = await _supabaseService.Client
-                    .From<MangaWithChaptersDto>()
-                    .Where(m => m.Id == id)
-                    .Select("*, chapters(*)")
-                    .Single();
+                // Get manga
+                var mangaQuery = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE id = @id";
+                MangaWithChaptersDto? manga = null;
+                using (var cmd = new NpgsqlCommand(mangaQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("id", id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            manga = new MangaWithChaptersDto
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(2),
+                                Cover = reader.GetString(3),
+                                Description = reader.GetString(4),
+                                Status = reader.GetString(5),
+                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
+                                Authors = (string[])reader.GetValue(8),
+                                Genres = (string[])reader.GetValue(9),
+                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
+                                Score = reader.GetDecimal(11),
+                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
+                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
+                                CreatedAt = reader.GetDateTime(14),
+                                UpdatedAt = reader.GetDateTime(15),
+                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
+                            };
+                        }
+                    }
+                }
 
-                if (response == null)
+                if (manga == null)
                     return NotFound(ErrorResponse.Create("Manga not found", status: 404));
 
-                var manga = response;
-                var sortedChapters = manga.Chapters?.OrderBy(c => c.Number).ToList() ?? new List<ChapterDto>();
+                // Get chapters
+                var chaptersQuery = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number";
+                var chapters = new List<ChapterDto>();
+                using (var cmd = new NpgsqlCommand(chaptersQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("mangaId", id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var pagesValue = reader.GetValue(3);
+                            short pagesCount;
+                            if (pagesValue is short[] pagesArray)
+                            {
+                                pagesCount = (short)pagesArray.Length;
+                            }
+                            else if (pagesValue is short singlePage)
+                            {
+                                pagesCount = singlePage;
+                            }
+                            else
+                            {
+                                pagesCount = 0;
+                            }
+
+                            chapters.Add(new ChapterDto
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(1),
+                                Number = reader.GetFloat(2),
+                                Pages = pagesCount,
+                                UpdatedAt = reader.GetDateTime(4),
+                                CreatedAt = reader.GetDateTime(5)
+                            });
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                var sortedChapters = chapters.OrderBy(c => c.Number).ToList();
                 var responseObj = new MangaDetailResponse
                 {
                     Id = manga.Id,
@@ -247,6 +369,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga", ex.Message));
             }
         }
@@ -265,29 +388,52 @@ namespace AkariApi.Controllers
         {
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var response = await _supabaseService.Client
-                    .From<ChapterDto>()
-                    .Where(c => c.MangaId == id)
-                    .Select("*")
-                    .Get();
-
-                var sortedChapters = response.Models.OrderBy(c => c.Number).ToList();
-                var chapters = sortedChapters.Select(c => new MangaChapter
+                var query = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @id ORDER BY number";
+                var chapters = new List<MangaChapter>();
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
-                    Id = c.Id,
-                    Title = c.Title,
-                    Number = c.Number,
-                    Pages = c.Pages,
-                    UpdatedAt = c.UpdatedAt,
-                    CreatedAt = c.CreatedAt,
-                }).ToList();
+                    cmd.Parameters.AddWithValue("id", id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var pagesValue = reader.GetValue(3);
+                            short pagesCount;
+                            if (pagesValue is short[] pagesArray)
+                            {
+                                pagesCount = (short)pagesArray.Length;
+                            }
+                            else if (pagesValue is short singlePage)
+                            {
+                                pagesCount = singlePage;
+                            }
+                            else
+                            {
+                                pagesCount = 0;
+                            }
+
+                            chapters.Add(new MangaChapter
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(1),
+                                Number = reader.GetFloat(2),
+                                Pages = pagesCount,
+                                UpdatedAt = reader.GetDateTime(4),
+                                CreatedAt = reader.GetDateTime(5),
+                            });
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
 
                 return Ok(SuccessResponse<List<MangaChapter>>.Create(chapters));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve chapters", ex.Message));
             }
         }
@@ -321,26 +467,43 @@ namespace AkariApi.Controllers
                 return BadRequest(ErrorResponse.Create("Unable to determine client IP address"));
             }
 
+            if (!System.Net.IPAddress.TryParse(clientIp, out var ipAddress))
+            {
+                return BadRequest(ErrorResponse.Create("Invalid client IP address"));
+            }
+
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var rpcResponse = await _supabaseService.AdminClient.Rpc("increment_manga_view", new { p_manga_id = id, p_ip = clientIp });
-                if (rpcResponse.Content == "\"view_logged\"")
+                var rpcQuery = "SELECT increment_manga_view(@p_manga_id, @p_ip)";
+                string? content;
+                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("p_manga_id", id);
+                    cmd.Parameters.AddWithValue("p_ip", ipAddress);
+                    var result = await cmd.ExecuteScalarAsync();
+                    content = result?.ToString();
+                }
+
+                await _postgresService.CloseAsync();
+
+                if (content == "view_logged")
                 {
                     return Ok(SuccessResponse<string>.Create("Views updated successfully"));
                 }
-                else if (rpcResponse.Content == "\"ignored_recent_view\"")
+                else if (content == "ignored_recent_view")
                 {
                     return Ok(SuccessResponse<string>.Create("View recorded (recent view ignored)"));
                 }
                 else
                 {
-                    return StatusCode(500, ErrorResponse.Create("Unexpected response from RPC"));
+                    return StatusCode(500, ErrorResponse.Create("Unexpected response from RPC", content));
                 }
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to update views", ex.Message));
             }
         }
@@ -367,20 +530,24 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var rating = new MangaRatingDto
+                var query = "INSERT INTO manga_ratings (user_id, manga_id, rating) VALUES (@userId, @mangaId, @rating) ON CONFLICT (user_id, manga_id) DO UPDATE SET rating = EXCLUDED.rating";
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
-                    UserId = userId,
-                    MangaId = id,
-                    Rating = request.Rating
-                };
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    cmd.Parameters.AddWithValue("mangaId", id);
+                    cmd.Parameters.AddWithValue("rating", request.Rating);
+                    await cmd.ExecuteNonQueryAsync();
+                }
 
-                var response = await _supabaseService.Client.From<MangaRatingDto>().Upsert(rating, new Supabase.Postgrest.QueryOptions { OnConflict = "user_id,manga_id" });
+                await _postgresService.CloseAsync();
+
                 return Ok(SuccessResponse<string>.Create("Rating submitted successfully"));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to rate manga", ex.Message));
             }
         }
@@ -399,19 +566,84 @@ namespace AkariApi.Controllers
         {
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var response = await _supabaseService.Client
-                    .From<MangaWithChaptersDto>()
-                    .Where(m => m.MalId == id)
-                    .Select("*, chapters(*)")
-                    .Single();
+                // Get manga
+                var mangaQuery = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE mal_id = @id";
+                MangaWithChaptersDto? manga = null;
+                using (var cmd = new NpgsqlCommand(mangaQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("id", id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            manga = new MangaWithChaptersDto
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(2),
+                                Cover = reader.GetString(3),
+                                Description = reader.GetString(4),
+                                Status = reader.GetString(5),
+                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
+                                Authors = (string[])reader.GetValue(8),
+                                Genres = (string[])reader.GetValue(9),
+                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
+                                Score = reader.GetDecimal(11),
+                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
+                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
+                                CreatedAt = reader.GetDateTime(14),
+                                UpdatedAt = reader.GetDateTime(15),
+                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
+                            };
+                        }
+                    }
+                }
 
-                if (response == null)
+                if (manga == null)
                     return NotFound(ErrorResponse.Create("Manga not found", status: 404));
 
-                var manga = response;
-                var sortedChapters = manga.Chapters?.OrderBy(c => c.Number).ToList() ?? new List<ChapterDto>();
+                // Get chapters
+                var chaptersQuery = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number";
+                var chapters = new List<ChapterDto>();
+                using (var cmd = new NpgsqlCommand(chaptersQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("mangaId", manga.Id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var pagesValue = reader.GetValue(3);
+                            short pagesCount;
+                            if (pagesValue is short[] pagesArray)
+                            {
+                                pagesCount = (short)pagesArray.Length;
+                            }
+                            else if (pagesValue is short singlePage)
+                            {
+                                pagesCount = singlePage;
+                            }
+                            else
+                            {
+                                pagesCount = 0;
+                            }
+
+                            chapters.Add(new ChapterDto
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(1),
+                                Number = reader.GetFloat(2),
+                                Pages = pagesCount,
+                                UpdatedAt = reader.GetDateTime(4),
+                                CreatedAt = reader.GetDateTime(5)
+                            });
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                var sortedChapters = chapters.OrderBy(c => c.Number).ToList();
                 var responseObj = new MangaDetailResponse
                 {
                     Id = manga.Id,
@@ -444,6 +676,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga", ex.Message));
             }
         }
@@ -472,41 +705,47 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var response = await _supabaseService.Client
-                    .From<MangaWithChaptersDto>()
-                    .Filter("mal_id", Supabase.Postgrest.Constants.Operator.In, request.MalIds)
-                    .Select("*")
-                    .Get();
-
-                var mangaList = response.Models.Select(manga =>
+                var query = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE mal_id = ANY(@malIds)";
+                var mangaList = new List<MangaResponse>();
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
-                    var sortedChapters = manga.Chapters?.OrderBy(c => c.Number).ToList() ?? new List<ChapterDto>();
-                    return new MangaResponse
+                    cmd.Parameters.AddWithValue("malIds", request.MalIds);
+                    using (var reader = await cmd.ExecuteReaderAsync())
                     {
-                        Id = manga.Id,
-                        Title = manga.Title,
-                        Cover = manga.Cover,
-                        Description = manga.Description,
-                        Status = manga.Status,
-                        Type = manga.Type,
-                        Authors = manga.Authors,
-                        Genres = manga.Genres,
-                        Views = manga.Views,
-                        Score = manga.Score,
-                        AlternativeTitles = manga.AlternativeTitles,
-                        MalId = manga.MalId,
-                        AniId = manga.AniId,
-                        CreatedAt = manga.CreatedAt,
-                        UpdatedAt = manga.UpdatedAt,
-                    };
-                }).ToList();
+                        while (await reader.ReadAsync())
+                        {
+                            var manga = new MangaResponse
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(2),
+                                Cover = reader.GetString(3),
+                                Description = reader.GetString(4),
+                                Status = reader.GetString(5),
+                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
+                                Authors = (string[])reader.GetValue(8),
+                                Genres = (string[])reader.GetValue(9),
+                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
+                                Score = reader.GetDecimal(11),
+                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
+                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
+                                CreatedAt = reader.GetDateTime(14),
+                                UpdatedAt = reader.GetDateTime(15),
+                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
+                            };
+                            mangaList.Add(manga);
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
 
                 return Ok(SuccessResponse<List<MangaResponse>>.Create(mangaList));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga", ex.Message));
             }
         }
@@ -526,14 +765,41 @@ namespace AkariApi.Controllers
         {
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var response = await _supabaseService.Client.Rpc("get_chapter_by_manga_and_number", new { _manga_id = id.ToString(), _number = subId });
+                var rpcQuery = "SELECT row_to_json(get_chapter_by_manga_and_number(@_manga_id, @_number))";
+                string? content;
+                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("_manga_id", id.ToString());
+                    cmd.Parameters.AddWithValue("_number", subId);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            content = reader.IsDBNull(0) ? null : reader.GetString(0);
+                        }
+                        else
+                        {
+                            content = null;
+                        }
+                    }
+                }
 
-                if (string.IsNullOrEmpty(response.Content))
+                await _postgresService.CloseAsync();
+
+                if (string.IsNullOrEmpty(content))
                     return NotFound(ErrorResponse.Create("Chapter not found", status: 404));
 
-                var chapter = JsonSerializer.Deserialize<ChapterResponse>(response.Content, _jsonOptions);
+                ChapterResponse? chapter = null;
+                try
+                {
+                    chapter = JsonSerializer.Deserialize<ChapterResponse>(content, _jsonOptions);
+                }
+                catch (JsonException)
+                {
+                    return StatusCode(500, ErrorResponse.Create("Failed to parse chapter data", "Invalid JSON response from database"));
+                }
 
                 if (chapter == null)
                     return NotFound(ErrorResponse.Create("Chapter not found", status: 404));
@@ -542,6 +808,7 @@ namespace AkariApi.Controllers
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve chapter", ex.Message));
             }
         }
@@ -569,21 +836,49 @@ namespace AkariApi.Controllers
 
             try
             {
-                await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var response = await _supabaseService.Client.Rpc("search_manga", new { search_text = query, result_limit = limit });
+                var rpcQuery = "SELECT json_agg(row_to_json(t)) FROM search_manga(@search_text, @result_limit) t";
+                string? content;
+                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("search_text", query);
+                    cmd.Parameters.AddWithValue("result_limit", limit);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            content = reader.IsDBNull(0) ? "[]" : reader.GetString(0);
+                        }
+                        else
+                        {
+                            content = null;
+                        }
+                    }
+                }
 
-                if (string.IsNullOrEmpty(response.Content))
+                await _postgresService.CloseAsync();
+
+                if (string.IsNullOrEmpty(content))
                 {
                     return Ok(SuccessResponse<List<MangaSearchResponse>>.Create(new List<MangaSearchResponse>()));
                 }
 
-                var searchResults = JsonSerializer.Deserialize<List<MangaSearchResponse>>(response.Content, _jsonOptions);
+                List<MangaSearchResponse>? searchResults = null;
+                try
+                {
+                    searchResults = JsonSerializer.Deserialize<List<MangaSearchResponse>>(content, _jsonOptions);
+                }
+                catch (JsonException)
+                {
+                    return StatusCode(500, ErrorResponse.Create("Failed to parse search results", "Invalid JSON response from database"));
+                }
 
                 return Ok(SuccessResponse<List<MangaSearchResponse>>.Create(searchResults ?? new List<MangaSearchResponse>()));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to search manga", ex.Message));
             }
         }
