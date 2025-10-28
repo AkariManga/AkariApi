@@ -767,11 +767,11 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                var rpcQuery = "SELECT row_to_json(get_chapter_by_manga_and_number(@_manga_id, @_number))";
+                var rpcQuery = "SELECT get_chapter_by_manga_and_number(@_manga_id, @_number)";
                 string? content;
                 using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
                 {
-                    cmd.Parameters.AddWithValue("_manga_id", id.ToString());
+                    cmd.Parameters.AddWithValue("_manga_id", id);
                     cmd.Parameters.AddWithValue("_number", subId);
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
