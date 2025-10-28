@@ -54,13 +54,19 @@ builder.Services.AddApiVersioning(options =>
     );
 });
 
+var apiKey = builder.Configuration["API_KEY"] ?? Environment.GetEnvironmentVariable("API_KEY");
+if (string.IsNullOrEmpty(apiKey))
+{
+    throw new InvalidOperationException("API_KEY environment variable is not set.");
+}
+
 builder.Services.AddRateLimiter(_ => _
     .AddFixedWindowLimiter(policyName: "fixed", options =>
     {
-        options.PermitLimit = 10;
+        options.PermitLimit = 20;
         options.Window = TimeSpan.FromSeconds(5);
         options.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
-        options.QueueLimit = 2;
+        options.QueueLimit = 10;
     })
     .AddFixedWindowLimiter(policyName: "uploads", options =>
     {
@@ -144,7 +150,12 @@ app.UseSwaggerUI(options =>
 
 app.UseCors("AllowAkari");
 
-app.UseRateLimiter();
+bool IsApiKeyValid(HttpContext context)
+{
+    var key = context.Request.Headers["X-API-Key"];
+    return !string.IsNullOrEmpty(key) && key == apiKey;
+}
+app.UseWhen(context => !IsApiKeyValid(context), app => app.UseRateLimiter());
 
 app.UseMiddleware<AkariApi.Middleware.TokenRefreshMiddleware>();
 app.UseMiddleware<AkariApi.Middleware.MalTokenRefreshMiddleware>();
