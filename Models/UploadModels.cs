@@ -7,7 +7,7 @@ namespace AkariApi.Models
         [Required]
         public Guid Id { get; set; }
         [Required]
-        public string UserId { get; set; } = string.Empty;
+        public Guid UserId { get; set; }
         [Required]
         public string Md5Hash { get; set; } = string.Empty;
         [Required]

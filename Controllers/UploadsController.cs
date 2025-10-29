@@ -9,6 +9,7 @@ using AkariApi.Models;
 using AkariApi.Helpers;
 using AkariApi.Attributes;
 using System.ComponentModel.DataAnnotations;
+using Npgsql;
 
 namespace AkariApi.Controllers
 {
@@ -20,11 +21,13 @@ namespace AkariApi.Controllers
     public class UploadsController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;
+        private readonly PostgresService _postgresService;
         private readonly string _bucketName = "uploads";
 
-        public UploadsController(SupabaseService supabaseService)
+        public UploadsController(SupabaseService supabaseService, PostgresService postgresService)
         {
             _supabaseService = supabaseService;
+            _postgresService = postgresService;
         }
 
         [HttpPost()]
@@ -59,14 +62,30 @@ namespace AkariApi.Controllers
             }
 
             // Check if a file with this hash already exists
-            var existingResponse = await _supabaseService.Client
-                .From<UploadDto>()
-                .Select("*")
-                .Where(u => u.Md5Hash == fileHash)
-                .Limit(1)
-                .Get();
-
-            var existing = existingResponse.Models.FirstOrDefault();
+            UploadDto? existing = null;
+            await _postgresService.OpenAsync();
+            using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at FROM uploads WHERE md5_hash = @hash LIMIT 1", _postgresService.Connection))
+            {
+                cmd.Parameters.AddWithValue("hash", fileHash);
+                using (var reader = await cmd.ExecuteReaderAsync())
+                {
+                    if (await reader.ReadAsync())
+                    {
+                        existing = new UploadDto
+                        {
+                            Id = reader.GetGuid(0),
+                            UserId = Guid.Parse(reader.GetString(1)),
+                            Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
+                            Size = reader.GetInt64(3),
+                            Url = reader.GetString(4),
+                            UsageCount = reader.GetInt32(5),
+                            Tags = reader.GetFieldValue<string[]>(6),
+                            CreatedAt = reader.GetDateTime(7)
+                        };
+                    }
+                }
+            }
+            await _postgresService.CloseAsync();
 
             string publicUrl;
             long processedSize;
@@ -110,7 +129,7 @@ namespace AkariApi.Controllers
             var uploadDto = new UploadDto
             {
                 Id = Guid.NewGuid(),
-                UserId = userId.ToString(),
+                UserId = userId,
                 Md5Hash = fileHash,
                 Size = processedSize,
                 Url = publicUrl,
@@ -119,9 +138,20 @@ namespace AkariApi.Controllers
                 CreatedAt = DateTime.UtcNow
             };
 
-            await _supabaseService.Client
-                .From<UploadDto>()
-                .Insert(uploadDto);
+            await _postgresService.OpenAsync();
+            using (var cmd = new NpgsqlCommand("INSERT INTO uploads (id, user_id, md5_hash, size, url, usage_count, tags, created_at) VALUES (@id, @userId, @hash, @size, @url, @usage, @tags, @created)", _postgresService.Connection))
+            {
+                cmd.Parameters.AddWithValue("id", uploadDto.Id);
+                cmd.Parameters.AddWithValue("userId", uploadDto.UserId);
+                cmd.Parameters.AddWithValue("hash", uploadDto.Md5Hash);
+                cmd.Parameters.AddWithValue("size", uploadDto.Size);
+                cmd.Parameters.AddWithValue("url", uploadDto.Url);
+                cmd.Parameters.AddWithValue("usage", uploadDto.UsageCount);
+                cmd.Parameters.AddWithValue("tags", uploadDto.Tags);
+                cmd.Parameters.AddWithValue("created", uploadDto.CreatedAt);
+                await cmd.ExecuteNonQueryAsync();
+            }
+            await _postgresService.CloseAsync();
 
             var uploadResponse = new UploadResponse
             {
@@ -148,24 +178,49 @@ namespace AkariApi.Controllers
 
             try
             {
-                var query = _supabaseService.Client
-                    .From<UploadDto>();
+                await _postgresService.OpenAsync();
 
-                var totalCount = await query.Count(Supabase.Postgrest.Constants.CountType.Exact);
+                long totalCount;
+                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads", _postgresService.Connection))
+                {
+                    totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+                }
+
                 var offset = (clampedPage - 1) * clampedPageSize;
+                var uploads = new List<UploadDto>();
 
-                var uploadsResponse = await query
-                    .Offset(offset)
-                    .Limit(clampedPageSize)
-                    .Get();
+                using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at FROM uploads ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("offset", offset);
+                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            uploads.Add(new UploadDto
+                            {
+                                Id = reader.GetGuid(0),
+                                UserId = reader.GetGuid(1),
+                                Md5Hash = reader.GetString(2),
+                                Size = reader.GetInt64(3),
+                                Url = reader.GetString(4),
+                                UsageCount = reader.GetInt32(5),
+                                Tags = reader.GetFieldValue<string[]>(6),
+                                CreatedAt = reader.GetDateTime(7)
+                            });
+                        }
+                    }
+                }
 
-                var uploadResponses = uploadsResponse.Models.Select(dto => new UploadResponse
+                await _postgresService.CloseAsync();
+
+                var uploadResponses = uploads.Select(dto => new UploadResponse
                 {
                     Id = dto.Id,
-                    UserId = dto.UserId,
-                    Md5Hash = dto.Md5Hash,
+                    UserId = dto.UserId!,
+                    Md5Hash = dto.Md5Hash!,
                     Size = dto.Size,
-                    Url = dto.Url,
+                    Url = dto.Url!,
                     UsageCount = dto.UsageCount,
                     Tags = dto.Tags,
                     CreatedAt = dto.CreatedAt
@@ -174,7 +229,7 @@ namespace AkariApi.Controllers
                 var paginatedResponse = new PaginatedResponse<UploadResponse>
                 {
                     Items = uploadResponses,
-                    TotalItems = totalCount,
+                    TotalItems = (int)totalCount,
                     CurrentPage = clampedPage,
                     PageSize = clampedPageSize
                 };
@@ -207,25 +262,51 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
                 }
 
-                var query = _supabaseService.Client
-                    .From<UploadDto>()
-                    .Where(u => u.UserId == userId.ToString());
+                await _postgresService.OpenAsync();
 
-                var totalCount = await query.Count(Supabase.Postgrest.Constants.CountType.Exact);
+                long totalCount;
+                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE user_id = @userId", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+                }
+
                 var offset = (clampedPage - 1) * clampedPageSize;
+                var uploads = new List<UploadDto>();
 
-                var uploadsResponse = await query
-                    .Offset(offset)
-                    .Limit(clampedPageSize)
-                    .Get();
+                using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at FROM uploads WHERE user_id = @userId ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    cmd.Parameters.AddWithValue("offset", offset);
+                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            uploads.Add(new UploadDto
+                            {
+                                Id = reader.GetGuid(0),
+                                UserId = reader.GetGuid(1),
+                                Md5Hash = reader.GetString(2),
+                                Size = reader.GetInt64(3),
+                                Url = reader.GetString(4),
+                                UsageCount = reader.GetInt32(5),
+                                Tags = reader.GetFieldValue<string[]>(6),
+                                CreatedAt = reader.GetDateTime(7)
+                            });
+                        }
+                    }
+                }
 
-                var uploadResponses = uploadsResponse.Models.Select(dto => new UploadResponse
+                await _postgresService.CloseAsync();
+
+                var uploadResponses = uploads.Select(dto => new UploadResponse
                 {
                     Id = dto.Id,
-                    UserId = dto.UserId,
-                    Md5Hash = dto.Md5Hash,
+                    UserId = dto.UserId!,
+                    Md5Hash = dto.Md5Hash!,
                     Size = dto.Size,
-                    Url = dto.Url,
+                    Url = dto.Url!,
                     UsageCount = dto.UsageCount,
                     Tags = dto.Tags,
                     CreatedAt = dto.CreatedAt
@@ -234,7 +315,7 @@ namespace AkariApi.Controllers
                 var paginatedResponse = new PaginatedResponse<UploadResponse>
                 {
                     Items = uploadResponses,
-                    TotalItems = totalCount,
+                    TotalItems = (int)totalCount,
                     CurrentPage = clampedPage,
                     PageSize = clampedPageSize
                 };

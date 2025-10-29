@@ -10,7 +10,7 @@ namespace AkariApi.Models
         public Guid Id { get; set; } = Guid.NewGuid();
 
         [Column("user_id")]
-        public string? UserId { get; set; }
+        public Guid UserId { get; set; }
 
         [Column("md5_hash")]
         public string? Md5Hash { get; set; }
@@ -19,7 +19,7 @@ namespace AkariApi.Models
         public long Size { get; set; }
 
         [Column("url")]
-        public string? Url { get; set; }
+        public string Url { get; set; } = string.Empty;
 
         [Column("usage_count")]
         public int UsageCount { get; set; }

@@ -126,7 +126,7 @@ namespace AkariApi.Controllers
                                 Attachment = reader.IsDBNull(reader.GetOrdinal("attachment_id")) ? null : new UploadResponse
                                 {
                                     Id = reader.GetGuid(reader.GetOrdinal("attachment_id")),
-                                    UserId = reader.GetGuid(reader.GetOrdinal("user_id")).ToString(),
+                                    UserId = reader.GetGuid(reader.GetOrdinal("user_id")),
                                     Md5Hash = reader.GetString(reader.GetOrdinal("upload_md5_hash")),
                                     Size = reader.GetInt64(reader.GetOrdinal("upload_size")),
                                     Url = reader.GetString(reader.GetOrdinal("upload_url")),
@@ -287,7 +287,7 @@ namespace AkariApi.Controllers
                                 Attachment = reader.IsDBNull(reader.GetOrdinal("attachment_id")) ? null : new UploadResponse
                                 {
                                     Id = reader.GetGuid(reader.GetOrdinal("attachment_id")),
-                                    UserId = reader.GetGuid(reader.GetOrdinal("user_id")).ToString(),
+                                    UserId = reader.GetGuid(reader.GetOrdinal("user_id")),
                                     Md5Hash = reader.GetString(reader.GetOrdinal("upload_md5_hash")),
                                     Size = reader.GetInt64(reader.GetOrdinal("upload_size")),
                                     Url = reader.GetString(reader.GetOrdinal("upload_url")),
@@ -538,7 +538,7 @@ namespace AkariApi.Controllers
                             Attachment = reader.IsDBNull(reader.GetOrdinal("attachment_id")) ? null : new UploadResponse
                             {
                                 Id = reader.GetGuid(reader.GetOrdinal("attachment_id")),
-                                UserId = reader.GetGuid(reader.GetOrdinal("user_id")).ToString(),
+                                UserId = reader.GetGuid(reader.GetOrdinal("user_id")),
                                 Md5Hash = reader.GetString(reader.GetOrdinal("upload_md5_hash")),
                                 Size = reader.GetInt64(reader.GetOrdinal("upload_size")),
                                 Url = reader.GetString(reader.GetOrdinal("upload_url")),
