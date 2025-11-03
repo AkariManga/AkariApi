@@ -10,7 +10,7 @@ namespace AkariApi.Middleware
         private readonly RequestDelegate _next;
         private readonly ILogger<RequestTimingMiddleware> _logger;
         private const int MaxSamplesPerEndpoint = 500;
-        private static readonly ConcurrentDictionary<string, RollingStats> Stats = new();
+        private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, RollingStats>> Stats = new();
 
         public RequestTimingMiddleware(RequestDelegate next, ILogger<RequestTimingMiddleware> logger)
         {
@@ -39,12 +39,24 @@ namespace AkariApi.Middleware
                 var elapsed = sw.ElapsedMilliseconds;
                 var method = context.Request.Method;
                 var path = context.GetEndpoint()?.DisplayName ?? context.Request.Path;
-                var key = $"{method} {path}";
 
-                var stats = Stats.GetOrAdd(key, _ => new RollingStats(MaxSamplesPerEndpoint));
+                string routeName;
+                if (path.Contains('.'))
+                {
+                    var parts = path.Split('.');
+                    var last = parts.Last();
+                    routeName = last.Split('(')[0].Trim();
+                }
+                else
+                {
+                    routeName = path;
+                }
+
+                var routeStats = Stats.GetOrAdd(routeName, _ => new ConcurrentDictionary<string, RollingStats>());
+                var stats = routeStats.GetOrAdd(method, _ => new RollingStats(MaxSamplesPerEndpoint));
                 stats.Add(elapsed);
 
-                _ = Task.Run(() => SaveRouteStatsAsync(key, stats));
+                _ = Task.Run(() => SaveRouteStatsAsync(routeName, routeStats));
 
                 _logger.LogInformation(
                     "{Method} {Path} ({Status}) took {Elapsed} ms (avg {Avg} ms over {Count} samples)",
@@ -52,20 +64,24 @@ namespace AkariApi.Middleware
             }
         }
 
-        private async Task SaveRouteStatsAsync(string key, RollingStats stats)
+        private async Task SaveRouteStatsAsync(string routeName, ConcurrentDictionary<string, RollingStats> routeStats)
         {
             try
             {
-                var data = new { stats.Count, stats.Average };
+                var data = new Dictionary<string, object>();
+                foreach (var kvp in routeStats)
+                {
+                    data[kvp.Key] = new { count = kvp.Value.Count, average = $"{kvp.Value.Average:F2} ms" };
+                }
                 var json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
-                var fileName = key.Replace("/", "_").Replace(" ", "_").Replace("?", "_").Replace("&", "_").Replace("=", "_") + ".json";
+                var fileName = routeName + ".json";
                 var filePath = Path.Combine("stats", fileName);
                 Directory.CreateDirectory("stats");
                 await File.WriteAllTextAsync(filePath, json);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to save stats for {Key}", key);
+                _logger.LogError(ex, "Failed to save stats for {Route}", routeName);
             }
         }
 
