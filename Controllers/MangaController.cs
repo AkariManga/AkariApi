@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
 using Npgsql;
-using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 
 namespace AkariApi.Controllers
 {
@@ -19,6 +19,7 @@ namespace AkariApi.Controllers
         private readonly SupabaseService _supabaseService;
         private readonly PostgresService _postgresService;
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _ipSemaphores = new();
 
         public MangaController(SupabaseService supabaseService, PostgresService postgresService)
         {
@@ -438,6 +439,32 @@ namespace AkariApi.Controllers
             }
         }
 
+        private static bool IsLocalOrPrivateIp(System.Net.IPAddress ip)
+        {
+            if (ip.Equals(System.Net.IPAddress.Loopback))
+            {
+                return true;
+            }
+
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) // IPv4
+            {
+                var bytes = ip.GetAddressBytes();
+                // Check private ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+                return bytes[0] == 10 ||
+                    (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+                    (bytes[0] == 192 && bytes[1] == 168);
+            }
+            else if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6) // IPv6
+            {
+                var bytes = ip.GetAddressBytes();
+                // Check for link-local (fe80::/10) and private (fc00::/7)
+                return (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) || // fe80::/10
+                    (bytes[0] == 0xfc || bytes[0] == 0xfd); // fc00::/7
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Update manga views
         /// </summary>
@@ -472,39 +499,55 @@ namespace AkariApi.Controllers
                 return BadRequest(ErrorResponse.Create("Invalid client IP address"));
             }
 
+            if (IsLocalOrPrivateIp(ipAddress))
+            {
+                return Ok(SuccessResponse<string>.Create("View ignored (local or private IP)"));
+            }
+
+            // Acquire semaphore for this IP to prevent concurrent requests
+            var semaphore = _ipSemaphores.GetOrAdd(clientIp, _ => new SemaphoreSlim(1, 1));
+            await semaphore.WaitAsync();
+
             try
             {
-                await _postgresService.OpenAsync();
+                try
+                {
+                    await _postgresService.OpenAsync();
 
-                var rpcQuery = "SELECT increment_manga_view(@p_manga_id, @p_ip)";
-                string? content;
-                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("p_manga_id", id);
-                    cmd.Parameters.AddWithValue("p_ip", ipAddress);
-                    var result = await cmd.ExecuteScalarAsync();
-                    content = result?.ToString();
-                }
+                    var rpcQuery = "SELECT increment_manga_view(@p_manga_id, @p_ip)";
+                    string? content;
+                    using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
+                    {
+                        cmd.Parameters.AddWithValue("p_manga_id", id);
+                        cmd.Parameters.AddWithValue("p_ip", ipAddress);
+                        var result = await cmd.ExecuteScalarAsync();
+                        content = result?.ToString();
+                    }
 
-                await _postgresService.CloseAsync();
+                    await _postgresService.CloseAsync();
 
-                if (content == "view_logged")
-                {
-                    return Ok(SuccessResponse<string>.Create("Views updated successfully"));
+                    if (content == "view_logged")
+                    {
+                        return Ok(SuccessResponse<string>.Create("Views updated successfully"));
+                    }
+                    else if (content == "ignored_recent_view")
+                    {
+                        return Ok(SuccessResponse<string>.Create("View recorded (recent view ignored)"));
+                    }
+                    else
+                    {
+                        return StatusCode(500, ErrorResponse.Create("Unexpected response from RPC", content));
+                    }
                 }
-                else if (content == "ignored_recent_view")
+                catch (Exception ex)
                 {
-                    return Ok(SuccessResponse<string>.Create("View recorded (recent view ignored)"));
-                }
-                else
-                {
-                    return StatusCode(500, ErrorResponse.Create("Unexpected response from RPC", content));
+                    await _postgresService.CloseAsync();
+                    return StatusCode(500, ErrorResponse.Create("Failed to update views", ex.Message));
                 }
             }
-            catch (Exception ex)
+            finally
             {
-                await _postgresService.CloseAsync();
-                return StatusCode(500, ErrorResponse.Create("Failed to update views", ex.Message));
+                semaphore.Release();
             }
         }
 
