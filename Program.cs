@@ -143,6 +143,10 @@ app.UseWhen(context => !IsApiKeyValid(context), app => app.UseRateLimiter());
 
 app.UseMiddleware<AkariApi.Middleware.TokenRefreshMiddleware>();
 app.UseMiddleware<AkariApi.Middleware.MalTokenRefreshMiddleware>();
+if (app.Environment.IsDevelopment())
+{
+    app.UseMiddleware<AkariApi.Middleware.RequestTimingMiddleware>();
+}
 
 app.UseAuthorization();
 
