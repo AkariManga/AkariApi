@@ -15,13 +15,14 @@ namespace AkariApi.Helpers
         public static void SetCookie(HttpResponse response, string name, string value, TimeSpan? expires = null, string path = "/")
         {
             bool isDevelopment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+            var request = response.HttpContext.Request;
             var options = new CookieOptions
             {
                 HttpOnly = !isDevelopment,
                 Secure = !isDevelopment,
                 SameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.Strict,
                 Path = path,
-                Domain = isDevelopment ? null : ".akarimanga.dpdns.org",
+                Domain = isDevelopment ? null : request.Host.Host,
                 Expires = expires.HasValue ? DateTimeOffset.UtcNow.Add(expires.Value) : (DateTimeOffset?)null
             };
             response.Cookies.Append(name, value, options);
