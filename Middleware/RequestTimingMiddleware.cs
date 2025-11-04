@@ -11,6 +11,7 @@ namespace AkariApi.Middleware
         private readonly ILogger<RequestTimingMiddleware> _logger;
         private const int MaxSamplesPerEndpoint = 500;
         private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, RollingStats>> Stats = new();
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileLocks = new();
 
         public RequestTimingMiddleware(RequestDelegate next, ILogger<RequestTimingMiddleware> logger)
         {
@@ -66,6 +67,8 @@ namespace AkariApi.Middleware
 
         private async Task SaveRouteStatsAsync(string routeName, ConcurrentDictionary<string, RollingStats> routeStats)
         {
+            var semaphore = FileLocks.GetOrAdd(routeName, _ => new SemaphoreSlim(1, 1));
+            await semaphore.WaitAsync();
             try
             {
                 var data = new Dictionary<string, object>();
@@ -82,6 +85,10 @@ namespace AkariApi.Middleware
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to save stats for {Route}", routeName);
+            }
+            finally
+            {
+                semaphore.Release();
             }
         }
 
