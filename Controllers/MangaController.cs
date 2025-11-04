@@ -262,10 +262,16 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                // Get manga
-                var mangaQuery = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE id = @id";
+                var query = @"
+                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.score, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles,
+                           json_agg(row_to_json(c)) as chapters_json
+                    FROM manga m
+                    LEFT JOIN chapters c ON m.id = c.manga_id
+                    WHERE m.id = @id
+                    GROUP BY m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.score, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles";
                 MangaWithChaptersDto? manga = null;
-                using (var cmd = new NpgsqlCommand(mangaQuery, _postgresService.Connection))
+                List<ChapterDto> chapters = new();
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("id", id);
                     using (var reader = await cmd.ExecuteReaderAsync())
@@ -275,67 +281,39 @@ namespace AkariApi.Controllers
                             manga = new MangaWithChaptersDto
                             {
                                 Id = reader.GetGuid(0),
-                                Title = reader.GetString(2),
-                                Cover = reader.GetString(3),
-                                Description = reader.GetString(4),
-                                Status = reader.GetString(5),
-                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
-                                Authors = (string[])reader.GetValue(8),
-                                Genres = (string[])reader.GetValue(9),
-                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
-                                Score = reader.GetDecimal(11),
-                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
-                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
-                                CreatedAt = reader.GetDateTime(14),
-                                UpdatedAt = reader.GetDateTime(15),
-                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
-                            };
-                        }
-                    }
-                }
-
-                if (manga == null)
-                    return NotFound(ErrorResponse.Create("Manga not found", status: 404));
-
-                // Get chapters
-                var chaptersQuery = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number";
-                var chapters = new List<ChapterDto>();
-                using (var cmd = new NpgsqlCommand(chaptersQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("mangaId", id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var pagesValue = reader.GetValue(3);
-                            short pagesCount;
-                            if (pagesValue is short[] pagesArray)
-                            {
-                                pagesCount = (short)pagesArray.Length;
-                            }
-                            else if (pagesValue is short singlePage)
-                            {
-                                pagesCount = singlePage;
-                            }
-                            else
-                            {
-                                pagesCount = 0;
-                            }
-
-                            chapters.Add(new ChapterDto
-                            {
-                                Id = reader.GetGuid(0),
                                 Title = reader.GetString(1),
-                                Number = reader.GetFloat(2),
-                                Pages = pagesCount,
-                                UpdatedAt = reader.GetDateTime(4),
-                                CreatedAt = reader.GetDateTime(5)
-                            });
+                                Cover = reader.GetString(2),
+                                Description = reader.GetString(3),
+                                Status = reader.GetString(4),
+                                Type = Enum.Parse<MangaType>(reader.GetString(5)),
+                                Authors = (string[])reader.GetValue(6),
+                                Genres = (string[])reader.GetValue(7),
+                                Views = reader.GetInt64(8) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(8),
+                                Score = reader.GetDecimal(9),
+                                MalId = reader.IsDBNull(10) ? null : (reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(10)),
+                                AniId = reader.IsDBNull(11) ? null : (reader.GetInt64(11) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(11)),
+                                CreatedAt = reader.GetDateTime(12),
+                                UpdatedAt = reader.GetDateTime(13),
+                                AlternativeTitles = reader.IsDBNull(14) ? null : (string[])reader.GetValue(14)
+                            };
+
+                            var chaptersJson = reader.IsDBNull(15) ? "[]" : reader.GetString(15);
+                            try
+                            {
+                                chapters = JsonSerializer.Deserialize<List<ChapterDto>>(chaptersJson, _jsonOptions) ?? new List<ChapterDto>();
+                            }
+                            catch (JsonException)
+                            {
+                                chapters = new List<ChapterDto>();
+                            }
                         }
                     }
                 }
 
                 await _postgresService.CloseAsync();
+
+                if (manga == null)
+                    return NotFound(ErrorResponse.Create("Manga not found", status: 404));
 
                 var sortedChapters = chapters.OrderBy(c => c.Number).ToList();
                 var responseObj = new MangaDetailResponse
