@@ -3,7 +3,6 @@ using AkariApi.Models;
 using AkariApi.Services;
 using AkariApi.Attributes;
 using System.ComponentModel.DataAnnotations;
-using System.Globalization;
 using AkariApi.Helpers;
 using Npgsql;
 
@@ -38,16 +37,15 @@ namespace AkariApi.Controllers
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
 
-            // Normalize the genre name to title case
-            var textInfo = CultureInfo.CurrentCulture.TextInfo;
-            var normalizedName = textInfo.ToTitleCase(name.ToLower());
+            // Normalize the genre name to lowercase
+            var normalizedName = name.ToLower();
 
             try
             {
                 await _postgresService.OpenAsync();
 
                 // Get total count
-                var countQuery = "SELECT COUNT(*) FROM manga WHERE @name = ANY(genres)";
+                var countQuery = "SELECT COUNT(*) FROM manga WHERE lower_text_array(genres) @> ARRAY[@name]";
                 long totalCountLong;
                 using (var countCmd = new NpgsqlCommand(countQuery, _postgresService.Connection))
                 {
@@ -63,7 +61,7 @@ namespace AkariApi.Controllers
                 var selectQuery = @"
                     SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles
                     FROM manga
-                    WHERE @name = ANY(genres)
+                    WHERE lower_text_array(genres) @> ARRAY[@name]
                     ORDER BY updated_at DESC
                     LIMIT @limit OFFSET @offset";
                 var mangaList = new List<MangaResponse>();
