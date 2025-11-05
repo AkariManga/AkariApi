@@ -100,6 +100,7 @@ namespace AkariApi.Models
 
     public class UserMangaListWithEntriesResponse : UserMangaListResponse
     {
+        [Required]
         public List<UserMangaListEntryResponse> Entries { get; set; } = new List<UserMangaListEntryResponse>();
     }
 
