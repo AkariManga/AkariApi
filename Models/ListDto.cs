@@ -72,6 +72,9 @@ namespace AkariApi.Models
 
         [Required]
         public DateTimeOffset UpdatedAt { get; set; }
+
+        [Required]
+        public int TotalEntries { get; set; }
     }
 
     public class UserMangaListEntryResponse

@@ -69,7 +69,7 @@ namespace AkariApi.Controllers
                 // Get paginated results
                 var offset = (clampedPage - 1) * clampedPageSize;
                 var selectQuery = $@"
-                    SELECT id, user_id, title, description, is_public, created_at, updated_at
+                    SELECT id, user_id, title, description, is_public, created_at, updated_at, (SELECT COUNT(*) FROM user_manga_list_entries WHERE list_id = user_manga_lists.id) AS total_entries
                     FROM user_manga_lists
                     {whereClause}
                     ORDER BY updated_at DESC
@@ -92,7 +92,8 @@ namespace AkariApi.Controllers
                                 Description = reader.IsDBNull(3) ? null : reader.GetString(3),
                                 IsPublic = reader.GetBoolean(4),
                                 CreatedAt = reader.GetDateTime(5),
-                                UpdatedAt = reader.GetDateTime(6)
+                                UpdatedAt = reader.GetDateTime(6),
+                                TotalEntries = reader.GetInt32(7)
                             };
                             lists.Add(list);
                         }
@@ -202,6 +203,7 @@ namespace AkariApi.Controllers
                 }
 
                 result.Entries = entries;
+                result.TotalEntries = entries.Count;
 
                 await _postgresService.CloseAsync();
 
@@ -255,7 +257,7 @@ namespace AkariApi.Controllers
                 // Get paginated results
                 var offset = (clampedPage - 1) * clampedPageSize;
                 var selectQuery = @"
-                    SELECT id, user_id, title, description, is_public, created_at, updated_at
+                    SELECT id, user_id, title, description, is_public, created_at, updated_at, (SELECT COUNT(*) FROM user_manga_list_entries WHERE list_id = user_manga_lists.id) AS total_entries
                     FROM user_manga_lists
                     WHERE user_id = @userId
                     ORDER BY updated_at DESC
@@ -278,7 +280,8 @@ namespace AkariApi.Controllers
                                 Description = reader.IsDBNull(3) ? null : reader.GetString(3),
                                 IsPublic = reader.GetBoolean(4),
                                 CreatedAt = reader.GetDateTime(5),
-                                UpdatedAt = reader.GetDateTime(6)
+                                UpdatedAt = reader.GetDateTime(6),
+                                TotalEntries = reader.GetInt32(7)
                             };
                             lists.Add(list);
                         }
@@ -353,7 +356,8 @@ namespace AkariApi.Controllers
                             Description = reader.IsDBNull(3) ? null : reader.GetString(3),
                             IsPublic = reader.GetBoolean(4),
                             CreatedAt = reader.GetDateTime(5),
-                            UpdatedAt = reader.GetDateTime(6)
+                            UpdatedAt = reader.GetDateTime(6),
+                            TotalEntries = 0
                         };
                     }
                 }
@@ -694,6 +698,62 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to update entry order", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Delete a list
+        /// </summary>
+        /// <param name="id">The list ID.</param>
+        /// <returns>Success message on deletion.</returns>
+        [HttpDelete("{id}")]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        [RequireTokenRefresh]
+        public async Task<IActionResult> DeleteList(Guid id)
+        {
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(error))
+                {
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
+                }
+
+                await _postgresService.OpenAsync();
+
+                // Check if list exists and user owns it
+                using (var cmd = new NpgsqlCommand("SELECT id FROM user_manga_lists WHERE id = @id AND user_id = @userId", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("id", id);
+                    cmd.Parameters.AddWithValue("userId", userId);
+
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result == null)
+                    {
+                        await _postgresService.CloseAsync();
+                        return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
+                    }
+                }
+
+                using (var cmd = new NpgsqlCommand("DELETE FROM user_manga_lists WHERE id = @id", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("id", id);
+
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<string>.Create("List deleted successfully"));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to delete list", ex.Message));
             }
         }
     }
