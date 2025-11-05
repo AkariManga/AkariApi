@@ -439,7 +439,7 @@ namespace AkariApi.Controllers
                 {
                     maxCmd.Parameters.AddWithValue("listId", id);
                     var result = await maxCmd.ExecuteScalarAsync();
-                    nextIndex = result != null ? (int)(long)result + 1 : 0;
+                    nextIndex = Convert.ToInt32(result) + 1;
                 }
 
                 try
@@ -790,6 +790,62 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to delete list", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Get my lists containing a specific manga
+        /// </summary>
+        /// <param name="mangaId">The manga ID.</param>
+        /// <returns>An array of the user's list IDs that contain the specified manga.</returns>
+        [HttpGet("user/me/manga/{mangaId}")]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [ProducesResponseType(typeof(SuccessResponse<List<Guid>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        [RequireTokenRefresh]
+        public async Task<IActionResult> GetMyListsContainingManga(Guid mangaId)
+        {
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(error))
+                {
+                    await _postgresService.CloseAsync();
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
+                }
+
+                // Get list IDs containing the manga
+                var selectQuery = @"
+                    SELECT l.id
+                    FROM user_manga_lists l
+                    INNER JOIN user_manga_list_entries e ON l.id = e.list_id
+                    WHERE l.user_id = @userId AND e.manga_id = @mangaId
+                    ORDER BY l.updated_at DESC";
+                var listIds = new List<Guid>();
+                using (var selectCmd = new NpgsqlCommand(selectQuery, _postgresService.Connection))
+                {
+                    selectCmd.Parameters.AddWithValue("userId", userId);
+                    selectCmd.Parameters.AddWithValue("mangaId", mangaId);
+                    using (var reader = await selectCmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            listIds.Add(reader.GetGuid(0));
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<List<Guid>>.Create(listIds));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve lists containing manga", ex.Message));
             }
         }
     }
