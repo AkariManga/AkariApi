@@ -143,7 +143,7 @@ namespace AkariApi.Controllers
                 }
 
                 // Get the list, check access
-                var listQuery = "SELECT id, user_id, title, description, is_public, created_at, updated_at FROM user_manga_lists WHERE id = @id";
+                var listQuery = "SELECT l.id, l.user_id, l.title, l.description, l.is_public, l.created_at, l.updated_at, u.username, u.display_name FROM user_manga_lists l JOIN profiles u ON l.user_id = u.id WHERE l.id = @id";
                 UserMangaListWithEntriesResponse? result = null;
                 using (var listCmd = new NpgsqlCommand(listQuery, _postgresService.Connection))
                 {
@@ -165,6 +165,12 @@ namespace AkariApi.Controllers
                                     IsPublic = isPublic,
                                     CreatedAt = reader.GetDateTime(5),
                                     UpdatedAt = reader.GetDateTime(6),
+                                    User = new UserResponse
+                                    {
+                                        UserId = listUserId,
+                                        Username = reader.GetString(7),
+                                        DisplayName = reader.GetString(8)
+                                    },
                                     Entries = new List<UserMangaListEntryResponse>()
                                 };
                             }
@@ -179,7 +185,7 @@ namespace AkariApi.Controllers
                 }
 
                 // Get all entries for this list
-                var entriesQuery = "SELECT id, list_id, manga_id, order_index, created_at, updated_at FROM user_manga_list_entries WHERE list_id = @listId ORDER BY order_index ASC";
+                var entriesQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.list_id = @listId ORDER BY e.order_index ASC";
                 var entries = new List<UserMangaListEntryResponse>();
                 using (var entriesCmd = new NpgsqlCommand(entriesQuery, _postgresService.Connection))
                 {
@@ -195,7 +201,10 @@ namespace AkariApi.Controllers
                                 MangaId = reader.GetGuid(2),
                                 OrderIndex = reader.GetInt32(3),
                                 CreatedAt = reader.GetDateTime(4),
-                                UpdatedAt = reader.GetDateTime(5)
+                                UpdatedAt = reader.GetDateTime(5),
+                                MangaTitle = reader.GetString(6),
+                                MangaCover = reader.GetString(7),
+                                MangaDescription = reader.GetString(8)
                             };
                             entries.Add(entry);
                         }
@@ -433,11 +442,11 @@ namespace AkariApi.Controllers
                     nextIndex = result != null ? (int)(long)result + 1 : 0;
                 }
 
-                // Insert entry
-                var insertQuery = "INSERT INTO user_manga_list_entries (list_id, manga_id, order_index, created_at, updated_at) VALUES (@listId, @mangaId, @orderIndex, @createdAt, @updatedAt) RETURNING id, list_id, manga_id, order_index, created_at, updated_at";
-                UserMangaListEntryResponse resultEntry;
                 try
                 {
+                    // Insert entry
+                    var insertQuery = "INSERT INTO user_manga_list_entries (list_id, manga_id, order_index, created_at, updated_at) VALUES (@listId, @mangaId, @orderIndex, @createdAt, @updatedAt) RETURNING id";
+                    Guid entryId;
                     using (var insertCmd = new NpgsqlCommand(insertQuery, _postgresService.Connection))
                     {
                         insertCmd.Parameters.AddWithValue("listId", id);
@@ -446,7 +455,22 @@ namespace AkariApi.Controllers
                         var now = DateTimeOffset.UtcNow;
                         insertCmd.Parameters.AddWithValue("createdAt", now);
                         insertCmd.Parameters.AddWithValue("updatedAt", now);
-                        using (var reader = await insertCmd.ExecuteReaderAsync())
+                        var scalarResult = await insertCmd.ExecuteScalarAsync();
+                        if (scalarResult == null || scalarResult == DBNull.Value)
+                        {
+                            await _postgresService.CloseAsync();
+                            return StatusCode(500, ErrorResponse.Create("Failed to add entry", "Could not retrieve inserted entry ID"));
+                        }
+                        entryId = (Guid)scalarResult;
+                    }
+
+                    // Fetch the created entry with manga data
+                    var selectQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId";
+                    UserMangaListEntryResponse resultEntry;
+                    using (var selectCmd = new NpgsqlCommand(selectQuery, _postgresService.Connection))
+                    {
+                        selectCmd.Parameters.AddWithValue("entryId", entryId);
+                        using (var reader = await selectCmd.ExecuteReaderAsync())
                         {
                             await reader.ReadAsync();
                             resultEntry = new UserMangaListEntryResponse
@@ -456,7 +480,10 @@ namespace AkariApi.Controllers
                                 MangaId = reader.GetGuid(2),
                                 OrderIndex = reader.GetInt32(3),
                                 CreatedAt = reader.GetDateTime(4),
-                                UpdatedAt = reader.GetDateTime(5)
+                                UpdatedAt = reader.GetDateTime(5),
+                                MangaTitle = reader.GetString(6),
+                                MangaCover = reader.GetString(7),
+                                MangaDescription = reader.GetString(8)
                             };
                         }
                     }
@@ -468,7 +495,7 @@ namespace AkariApi.Controllers
                 catch (PostgresException ex) when (ex.SqlState == "23505") // unique violation
                 {
                     // Manga already exists in the list, return the existing entry
-                    var existingQuery = "SELECT id, list_id, manga_id, order_index, created_at, updated_at FROM user_manga_list_entries WHERE list_id = @listId AND manga_id = @mangaId";
+                    var existingQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.list_id = @listId AND e.manga_id = @mangaId";
                     using (var existingCmd = new NpgsqlCommand(existingQuery, _postgresService.Connection))
                     {
                         existingCmd.Parameters.AddWithValue("listId", id);
@@ -484,7 +511,10 @@ namespace AkariApi.Controllers
                                     MangaId = reader.GetGuid(2),
                                     OrderIndex = reader.GetInt32(3),
                                     CreatedAt = reader.GetDateTime(4),
-                                    UpdatedAt = reader.GetDateTime(5)
+                                    UpdatedAt = reader.GetDateTime(5),
+                                    MangaTitle = reader.GetString(6),
+                                    MangaCover = reader.GetString(7),
+                                    MangaDescription = reader.GetString(8)
                                 };
 
                                 await _postgresService.CloseAsync();
@@ -626,7 +656,7 @@ namespace AkariApi.Controllers
                 }
 
                 // Check if entry exists and belongs to this list
-                using (var cmd = new NpgsqlCommand("SELECT id, list_id, manga_id, order_index, created_at, updated_at FROM user_manga_list_entries WHERE id = @entryId AND list_id = @listId", _postgresService.Connection))
+                using (var cmd = new NpgsqlCommand("SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId AND e.list_id = @listId", _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("entryId", entryId);
                     cmd.Parameters.AddWithValue("listId", id);
@@ -652,7 +682,10 @@ namespace AkariApi.Controllers
                                 MangaId = reader.GetGuid(2),
                                 OrderIndex = reader.GetInt32(3),
                                 CreatedAt = reader.GetDateTime(4),
-                                UpdatedAt = reader.GetDateTime(5)
+                                UpdatedAt = reader.GetDateTime(5),
+                                MangaTitle = reader.GetString(6),
+                                MangaCover = reader.GetString(7),
+                                MangaDescription = reader.GetString(8)
                             };
                             await _postgresService.CloseAsync();
                             return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(noChangeResult));
@@ -671,7 +704,7 @@ namespace AkariApi.Controllers
                 }
 
                 // Fetch the updated entry
-                using (var cmd = new NpgsqlCommand("SELECT id, list_id, manga_id, order_index, created_at, updated_at FROM user_manga_list_entries WHERE id = @entryId", _postgresService.Connection))
+                using (var cmd = new NpgsqlCommand("SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId", _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("entryId", entryId);
 
@@ -686,7 +719,10 @@ namespace AkariApi.Controllers
                             MangaId = reader.GetGuid(2),
                             OrderIndex = reader.GetInt32(3),
                             CreatedAt = reader.GetDateTime(4),
-                            UpdatedAt = reader.GetDateTime(5)
+                            UpdatedAt = reader.GetDateTime(5),
+                            MangaTitle = reader.GetString(6),
+                            MangaCover = reader.GetString(7),
+                            MangaDescription = reader.GetString(8)
                         };
 
                         await _postgresService.CloseAsync();

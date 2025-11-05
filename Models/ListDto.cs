@@ -96,12 +96,24 @@ namespace AkariApi.Models
 
         [Required]
         public DateTimeOffset UpdatedAt { get; set; }
+
+        [Required]
+        public string MangaTitle { get; set; } = string.Empty;
+
+        [Required]
+        public string MangaCover { get; set; } = string.Empty;
+
+        [Required]
+        public string MangaDescription { get; set; } = string.Empty;
     }
 
     public class UserMangaListWithEntriesResponse : UserMangaListResponse
     {
         [Required]
         public List<UserMangaListEntryResponse> Entries { get; set; } = new List<UserMangaListEntryResponse>();
+
+        [Required]
+        public UserResponse User { get; set; } = new UserResponse();
     }
 
     public class UserMangaListPaginatedResponse : PaginatedResponse<UserMangaListResponse>
