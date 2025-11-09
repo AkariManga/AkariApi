@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace AkariApi.Attributes
@@ -17,7 +18,7 @@ namespace AkariApi.Attributes
         SevenDays = 604800
     }
 
-    public class CacheControlAttribute : ResultFilterAttribute
+    public class CacheControlAttribute : ActionFilterAttribute
     {
         private readonly int _maxAge;
         private readonly int _staleWhileRevalidate;
@@ -30,9 +31,20 @@ namespace AkariApi.Attributes
             _isPublic = isPublic;
         }
 
-        public override void OnResultExecuted(ResultExecutedContext context)
+        public override void OnActionExecuted(ActionExecutedContext context)
         {
-            if (context.HttpContext.Response.StatusCode == 200)
+            // Determine the intended status code from the result
+            int statusCode = 200; // Default for Ok() or similar
+            if (context.Result is StatusCodeResult statusResult)
+            {
+                statusCode = statusResult.StatusCode;
+            }
+            else if (context.Result is ObjectResult objectResult && objectResult.StatusCode.HasValue)
+            {
+                statusCode = objectResult.StatusCode.Value;
+            }
+
+            if (statusCode == 200)
             {
                 var cacheType = _isPublic ? "public" : "private";
                 var cacheControl = $"{cacheType}, max-age={_maxAge}";
