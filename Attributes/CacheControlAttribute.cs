@@ -17,7 +17,7 @@ namespace AkariApi.Attributes
         SevenDays = 604800
     }
 
-    public class CacheControlAttribute : ActionFilterAttribute
+    public class CacheControlAttribute : ResultFilterAttribute
     {
         private readonly int _maxAge;
         private readonly int _staleWhileRevalidate;
@@ -30,7 +30,7 @@ namespace AkariApi.Attributes
             _isPublic = isPublic;
         }
 
-        public override void OnActionExecuted(ActionExecutedContext context)
+        public override void OnResultExecuted(ResultExecutedContext context)
         {
             if (context.HttpContext.Response.StatusCode == 200)
             {
