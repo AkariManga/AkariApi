@@ -56,3 +56,4 @@ nunit-*.xml
 .vs/
 out/
 stats/
+PublicSuffixData.cs

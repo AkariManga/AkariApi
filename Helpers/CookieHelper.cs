@@ -37,22 +37,35 @@ namespace AkariApi.Helpers
             if (System.Net.IPAddress.TryParse(host, out _))
                 return null;
 
-            try
-            {
-                var extractor = new NStack.TldExtract();
-                var result = extractor.Extract(host);
-                return "." + result.root;
-            }
-            catch
-            {
-                var parts = host.Split('.');
-                if (parts.Length >= 2)
-                {
-                    return "." + parts[parts.Length-2] + "." + parts[parts.Length-1];
-                }
-
+            var suffix = GetPublicSuffix(host);
+            if (suffix == null)
                 return null;
+            var root = host.Substring(0, host.Length - suffix.Length - 1);
+            return "." + root;
+        }
+
+        private static string? GetPublicSuffix(string domain)
+        {
+            var labels = domain.Split('.');
+            for (int i = 0; i < labels.Length; i++)
+            {
+                var suffix = string.Join(".", labels.Skip(i));
+                if (IsPublicSuffix(suffix))
+                    return suffix;
             }
+            return null;
+        }
+
+        private static bool IsPublicSuffix(string s)
+        {
+            if (PublicSuffixData.Exceptions.Contains(s))
+                return false;
+            if (PublicSuffixData.Exact.Contains(s))
+                return true;
+            var parts = s.Split('.');
+            if (parts.Length > 1 && PublicSuffixData.Wildcards.Contains(parts[^1]))
+                return true;
+            return false;
         }
     }
 }
