@@ -14,6 +14,7 @@ WORKDIR /src
 COPY ["AkariApi.csproj", "."]
 RUN dotnet restore "./AkariApi.csproj"
 COPY . .
+RUN chmod +x GeneratePublicSuffixList.sh
 WORKDIR "/src/."
 RUN dotnet build "./AkariApi.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
