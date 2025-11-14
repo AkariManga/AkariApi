@@ -155,15 +155,18 @@ namespace AkariApi.Controllers
         /// Get popular manga
         /// </summary>
         /// <param name="days">The number of days to look back for views.</param>
-        /// <param name="limit">The maximum number of results.</param>
-        /// <param name="offset">The offset for pagination.</param>
+        /// <param name="page">The page number.</param>
+        /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A list of popular manga.</returns>
         [HttpGet("list/popular")]
         [CacheControl(CacheDuration.OneHour, CacheDuration.TwelveHours)]
         [ProducesResponseType(typeof(SuccessResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> GetPopularManga([FromQuery, Range(1, 365)] int days = 30, [FromQuery, Range(1, 100)] int limit = 20, [FromQuery, Range(0, int.MaxValue)] int offset = 0)
+        public async Task<IActionResult> GetPopularManga([FromQuery, Range(1, 365)] int days = 30, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
+            var offset = (clampedPage - 1) * clampedPageSize;
+
             try
             {
                 await _postgresService.OpenAsync();
@@ -173,7 +176,7 @@ namespace AkariApi.Controllers
                 using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("p_days", days);
-                    cmd.Parameters.AddWithValue("p_limit", limit);
+                    cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
                     cmd.Parameters.AddWithValue("p_offset", offset);
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
@@ -196,8 +199,8 @@ namespace AkariApi.Controllers
                     {
                         Items = new List<MangaResponse>(),
                         TotalItems = 0,
-                        CurrentPage = (offset / limit) + 1,
-                        PageSize = limit
+                        CurrentPage = clampedPage,
+                        PageSize = clampedPageSize
                     }));
                 }
 
@@ -235,8 +238,8 @@ namespace AkariApi.Controllers
                 {
                     Items = mangaList,
                     TotalItems = (int)totalCount,
-                    CurrentPage = (offset / limit) + 1,
-                    PageSize = limit
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
                 }));
             }
             catch (Exception ex)
