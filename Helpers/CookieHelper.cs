@@ -20,12 +20,39 @@ namespace AkariApi.Helpers
             {
                 HttpOnly = !isDevelopment,
                 Secure = !isDevelopment,
-                SameSite = SameSiteMode.Lax,
+                SameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.None,
                 Path = path,
-                Domain = isDevelopment ? null : request.Host.Host,
+                Domain = GetCookieDomain(request.Host.Host),
                 Expires = expires.HasValue ? DateTimeOffset.UtcNow.Add(expires.Value) : (DateTimeOffset?)null
             };
             response.Cookies.Append(name, value, options);
+        }
+
+        private static string? GetCookieDomain(string host)
+        {
+            if (string.IsNullOrEmpty(host))
+                return null;
+            if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+                return null;
+            if (System.Net.IPAddress.TryParse(host, out _))
+                return null;
+
+            try
+            {
+                var extractor = new NStack.TldExtract();
+                var result = extractor.Extract(host);
+                return "." + result.root;
+            }
+            catch
+            {
+                var parts = host.Split('.');
+                if (parts.Length >= 2)
+                {
+                    return "." + parts[parts.Length-2] + "." + parts[parts.Length-1];
+                }
+
+                return null;
+            }
         }
     }
 }
