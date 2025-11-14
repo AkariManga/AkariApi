@@ -15,6 +15,7 @@ COPY ["AkariApi.csproj", "."]
 RUN dotnet restore "./AkariApi.csproj"
 COPY . .
 RUN chmod +x GeneratePublicSuffixList.sh
+RUN sed -i 's/\r$//' GeneratePublicSuffixList.sh  # Strip Windows line endings
 WORKDIR "/src/."
 RUN dotnet build "./AkariApi.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
