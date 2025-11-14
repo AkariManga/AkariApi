@@ -20,7 +20,7 @@ namespace AkariApi.Helpers
             {
                 HttpOnly = !isDevelopment,
                 Secure = !isDevelopment,
-                SameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.Strict,
+                SameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.None,
                 Path = path,
                 Domain = isDevelopment ? null : request.Host.Host,
                 Expires = expires.HasValue ? DateTimeOffset.UtcNow.Add(expires.Value) : (DateTimeOffset?)null
