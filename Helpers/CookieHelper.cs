@@ -51,7 +51,7 @@ namespace AkariApi.Helpers
 
             // Build the registrable domain: the label just before the suffix + the suffix
             string registrableDomain = labels[labels.Length - suffixLabelCount - 1] + "." + suffix;
-            return registrableDomain;
+            return "." + registrableDomain;
         }
 
         private static string? GetPublicSuffix(string domain)
