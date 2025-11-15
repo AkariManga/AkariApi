@@ -40,16 +40,27 @@ namespace AkariApi.Helpers
             var suffix = GetPublicSuffix(host);
             if (suffix == null)
                 return null;
-            var root = host.Substring(0, host.Length - suffix.Length - 1);
-            return "." + root;
+
+            var labels = host.Split('.');
+            var suffixParts = suffix.Split('.');
+            int suffixLabelCount = suffixParts.Length;
+
+            // Ensure there is at least one label before the suffix
+            if (labels.Length <= suffixLabelCount)
+                return null;
+
+            // Build the registrable domain: the label just before the suffix + the suffix
+            string registrableDomain = labels[labels.Length - suffixLabelCount - 1] + "." + suffix;
+            return "." + registrableDomain;
         }
 
         private static string? GetPublicSuffix(string domain)
         {
             var labels = domain.Split('.');
-            for (int i = 0; i < labels.Length; i++)
+            // Check suffixes from longest to shortest
+            for (int i = 1; i <= labels.Length; i++)
             {
-                var suffix = string.Join(".", labels.Skip(i));
+                var suffix = string.Join(".", labels.Skip(labels.Length - i));
                 if (IsPublicSuffix(suffix))
                     return suffix;
             }
