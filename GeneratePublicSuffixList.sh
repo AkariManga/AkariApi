@@ -5,7 +5,8 @@ url="https://www.publicsuffix.org/list/public_suffix_list.dat"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 obj_dir="$script_dir/obj"
 list_path="$obj_dir/public_suffix_list.dat"
-
+cs_file="$script_dir/PublicSuffixData.cs"
+if [ -f "$cs_file" ]; then exit 0; fi
 mkdir -p "$obj_dir"
 
 # Download if not exists
@@ -49,8 +50,6 @@ print_set() {
     printf '        "%s",\n' "$i"
   done
 }
-
-cs_file="$script_dir/PublicSuffixData.cs"
 
 cat > "$cs_file" <<EOF
 using System.Collections.Generic;

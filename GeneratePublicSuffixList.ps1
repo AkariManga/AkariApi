@@ -1,4 +1,6 @@
 $url = "https://www.publicsuffix.org/list/public_suffix_list.dat"
+$csFilePath = Join-Path $PSScriptRoot "PublicSuffixData.cs"
+if (Test-Path $csFilePath) { return }
 $objPath = Join-Path $PSScriptRoot "obj"
 $listPath = Join-Path $objPath "public_suffix_list.dat"
 
@@ -49,5 +51,4 @@ $exceptionsStr
 }
 "@
 
-$csFilePath = Join-Path $PSScriptRoot "PublicSuffixData.cs"
 $csContent | Out-File $csFilePath -Encoding UTF8
