@@ -21,12 +21,8 @@
   </ItemGroup>
 
   <Target Name="GeneratePublicSuffixList" BeforeTargets="BeforeCompile">
-    <Message Text="OS is $(OS)" Importance="high" />
-    <Message Text="ProjectDir is $(ProjectDir)" Importance="high" />
-    <Message Text="Starting GeneratePublicSuffixList target" Importance="high" />
     <Exec Condition="'$(OS)' == 'Windows_NT'" Command="powershell -ExecutionPolicy Bypass -File $(ProjectDir)GeneratePublicSuffixList.ps1" />
     <Exec Condition="'$(OS)' != 'Windows_NT'" Command="bash $(ProjectDir)GeneratePublicSuffixList.sh" />
-    <Message Text="Finished GeneratePublicSuffixList target" Importance="high" />
   </Target>
 
 </Project>
