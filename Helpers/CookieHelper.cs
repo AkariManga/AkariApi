@@ -20,7 +20,7 @@ namespace AkariApi.Helpers
             {
                 HttpOnly = !isDevelopment,
                 Secure = !isDevelopment,
-                SameSite = SameSiteMode.Lax,
+                SameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.None,
                 Path = path,
                 Domain = GetCookieDomain(request.Host.Host),
                 Expires = expires.HasValue ? DateTimeOffset.UtcNow.Add(expires.Value) : (DateTimeOffset?)null
@@ -51,7 +51,7 @@ namespace AkariApi.Helpers
 
             // Build the registrable domain: the label just before the suffix + the suffix
             string registrableDomain = labels[labels.Length - suffixLabelCount - 1] + "." + suffix;
-            return "." + registrableDomain;
+            return registrableDomain;
         }
 
         private static string? GetPublicSuffix(string domain)
