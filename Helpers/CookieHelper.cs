@@ -58,7 +58,7 @@ namespace AkariApi.Helpers
         {
             var labels = domain.Split('.');
             // Check suffixes from longest to shortest
-            for (int i = 1; i <= labels.Length; i++)
+            for (int i = labels.Length; i >= 1; i--)
             {
                 var suffix = string.Join(".", labels.Skip(labels.Length - i));
                 if (IsPublicSuffix(suffix))
