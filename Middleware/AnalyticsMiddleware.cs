@@ -68,6 +68,9 @@ public class AnalyticsService : IDisposable
         [JsonPropertyName("path")]
         public string Path { get; set; }
 
+        [JsonPropertyName("route")]
+        public string Route { get; set; }
+
         [JsonPropertyName("method")]
         public string Method { get; set; }
 
@@ -101,17 +104,18 @@ public class AnalyticsService : IDisposable
             using var cmd = new NpgsqlCommand();
             cmd.Connection = postgresService.Connection;
 
-            var query = "INSERT INTO analytics_requests (hostname, ip_address, user_agent, path, method, response_time, status, created_at) VALUES ";
+            var query = "INSERT INTO analytics_requests (hostname, ip_address, user_agent, path, route, method, response_time, status, created_at) VALUES ";
             var parameters = new List<NpgsqlParameter>();
 
             for (int i = 0; i < requests.Count; i++)
             {
                 if (i > 0) query += ", ";
-                query += $"(@h{i}, @ip{i}, @ua{i}, @p{i}, @m{i}, @rt{i}, @s{i}, @ca{i})";
+                query += $"(@h{i}, @ip{i}, @ua{i}, @p{i}, @r{i}, @m{i}, @rt{i}, @s{i}, @ca{i})";
                 parameters.Add(new NpgsqlParameter($"@h{i}", requests[i].Hostname));
                 parameters.Add(new NpgsqlParameter($"@ip{i}", requests[i].IPAddress));
                 parameters.Add(new NpgsqlParameter($"@ua{i}", requests[i].UserAgent));
                 parameters.Add(new NpgsqlParameter($"@p{i}", requests[i].Path));
+                parameters.Add(new NpgsqlParameter($"@r{i}", requests[i].Route));
                 parameters.Add(new NpgsqlParameter($"@m{i}", requests[i].Method));
                 parameters.Add(new NpgsqlParameter($"@rt{i}", requests[i].ResponseTime));
                 parameters.Add(new NpgsqlParameter($"@s{i}", requests[i].Status));
@@ -163,12 +167,14 @@ public class AnalyticsService : IDisposable
 
     public RequestData CreateRequestData(HttpContext context, long responseTimeMs, DateTime createdAt)
     {
+        var path = GetPath(context);
         return new RequestData
         {
             Hostname = GetHostname(context),
             IPAddress = GetIPAddress(context),
             UserAgent = GetUserAgent(context),
-            Path = GetPath(context),
+            Path = path,
+            Route = NormalizeToRoute(path),
             Method = context.Request.Method,
             ResponseTime = (int)responseTimeMs,
             Status = context.Response.StatusCode,
@@ -244,6 +250,28 @@ public class AnalyticsService : IDisposable
         {
             return "";
         }
+    }
+
+    private string NormalizeToRoute(string path)
+    {
+        // Simple normalization: replace GUIDs and numbers with placeholders
+        var parts = path.Split('/');
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (Guid.TryParse(parts[i], out _))
+            {
+                parts[i] = "{id}";
+            }
+            else if (int.TryParse(parts[i], out _))
+            {
+                parts[i] = "{number}";
+            }
+            else if (float.TryParse(parts[i], out _))
+            {
+                parts[i] = "{float}";
+            }
+        }
+        return string.Join('/', parts);
     }
 
     public async Task FlushAsync()
