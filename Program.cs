@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Versioning;
 using Microsoft.AspNetCore.Mvc;
 using AkariApi.Filters;
 using System.Text.Json.Serialization;
+using Analytics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -146,6 +147,8 @@ app.UseMiddleware<AkariApi.Middleware.MalTokenRefreshMiddleware>();
 if (app.Environment.IsDevelopment())
 {
     app.UseMiddleware<AkariApi.Middleware.RequestTimingMiddleware>();
+} else {
+    app.UseAnalytics();
 }
 
 app.UseAuthorization();
