@@ -261,7 +261,7 @@ public class AnalyticsService : IDisposable
             var endpoint = context.GetEndpoint();
             if (endpoint is RouteEndpoint routeEndpoint)
             {
-                return routeEndpoint.RoutePattern.RawText ?? "";
+                return "/" + (routeEndpoint.RoutePattern.RawText ?? "").TrimStart('/');
             }
             return "";
         }
