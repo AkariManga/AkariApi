@@ -2,6 +2,7 @@ namespace Analytics;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -168,13 +169,14 @@ public class AnalyticsService : IDisposable
     public RequestData CreateRequestData(HttpContext context, long responseTimeMs, DateTime createdAt)
     {
         var path = GetPath(context);
+        var route = GetRoute(context);
         return new RequestData
         {
             Hostname = GetHostname(context),
             IPAddress = GetIPAddress(context),
             UserAgent = GetUserAgent(context),
             Path = path,
-            Route = NormalizeToRoute(path),
+            Route = string.IsNullOrEmpty(route) ? NormalizeToRoute(path) : route,
             Method = context.Request.Method,
             ResponseTime = (int)responseTimeMs,
             Status = context.Response.StatusCode,
@@ -245,6 +247,23 @@ public class AnalyticsService : IDisposable
             if (_config.GetPath != null)
                 return _config.GetPath.Invoke(context) ?? "";
             return context.Request.Path.ToString();
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private string GetRoute(HttpContext context)
+    {
+        try
+        {
+            var endpoint = context.GetEndpoint();
+            if (endpoint is RouteEndpoint routeEndpoint)
+            {
+                return routeEndpoint.RoutePattern.RawText ?? "";
+            }
+            return "";
         }
         catch
         {
