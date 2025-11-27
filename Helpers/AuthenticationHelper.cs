@@ -42,14 +42,6 @@ namespace AkariApi.Helpers
                 return (Guid.Empty, "Invalid access token");
             }
 
-            var refreshToken = GetRefreshToken(request);
-            if (string.IsNullOrEmpty(refreshToken))
-            {
-                return (Guid.Empty, "Refresh token required");
-            }
-
-            await supabaseService.Client.Auth.SetSession(accessToken, refreshToken);
-
             if (!Guid.TryParse(user.Id, out var userId))
             {
                 return (Guid.Empty, "Invalid user ID format");
