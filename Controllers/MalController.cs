@@ -18,7 +18,7 @@ namespace AkariApi.Controllers
 
         public MalController(IConfiguration configuration)
         {
-            clientId = configuration["MAL_CLIENT_ID"] ?? string.Empty;
+            clientId = configuration["MAL_CLIENT_ID"] ?? throw new InvalidOperationException("MAL_CLIENT_ID configuration is required.");
         }
 
         /// <summary>
