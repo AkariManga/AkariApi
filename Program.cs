@@ -28,11 +28,11 @@ builder.Services.AddSwaggerGen(options =>
     {
         options.AddServer(new Microsoft.OpenApi.Models.OpenApiServer { Url = "https://api.akarimanga.dpdns.org" });
     }
-    options.AddSecurityDefinition("CookieAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("Bearer Token", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-        In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
-        Name = "accessToken",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Name = "Authorization",
     });
     options.AddSecurityDefinition("MalCookieAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
@@ -142,7 +142,6 @@ bool IsApiKeyValid(HttpContext context)
 }
 app.UseWhen(context => !IsApiKeyValid(context), app => app.UseRateLimiter());
 
-app.UseMiddleware<AkariApi.Middleware.TokenRefreshMiddleware>();
 app.UseMiddleware<AkariApi.Middleware.MalTokenRefreshMiddleware>();
 if (app.Environment.IsDevelopment())
 {
