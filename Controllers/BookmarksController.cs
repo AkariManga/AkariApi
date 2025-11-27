@@ -5,8 +5,6 @@ using AkariApi.Attributes;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
-using Supabase.Postgrest;
-using System.Linq;
 using Npgsql;
 
 namespace AkariApi.Controllers
@@ -116,6 +114,205 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve bookmarks", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Search user's bookmarks
+        /// </summary>
+        /// <param name="query">The search query to filter bookmarks by manga title.</param>
+        /// <param name="page">The page number.</param>
+        /// <param name="pageSize">The number of items per page.</param>
+        /// <returns>A list of matching bookmarked manga.</returns>
+        [HttpGet("search")]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [ProducesResponseType(typeof(SuccessResponse<BookmarkListResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> SearchBookmarks([FromQuery, Required] string query, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return BadRequest(ErrorResponse.Create("Bad Request", "Search query is required"));
+            }
+
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                }
+
+                await _postgresService.OpenAsync();
+
+                var offset = (clampedPage - 1) * clampedPageSize;
+
+                // Get total count of matching bookmarks
+                long totalCount = 0;
+                var countQuery = @"
+                    SELECT COUNT(*)
+                    FROM user_bookmarks ub
+                    INNER JOIN manga m ON ub.manga_id = m.id
+                    WHERE ub.user_id = @userId
+                    AND m.search_vector @@ websearch_to_tsquery('english', @query)";
+
+                using (var countCmd = new NpgsqlCommand(countQuery, _postgresService.Connection))
+                {
+                    countCmd.Parameters.AddWithValue("userId", userId);
+                    countCmd.Parameters.AddWithValue("query", query);
+
+                    var result = await countCmd.ExecuteScalarAsync();
+                    totalCount = result != null ? (long)result : 0;
+                }
+
+                // Get matching bookmarks with manga details
+                var searchQuery = @"
+                    SELECT
+                        ub.id as bookmark_id,
+                        ub.created_at as bookmark_created_at,
+                        ub.updated_at as bookmark_updated_at,
+                        m.id as manga_id,
+                        m.title,
+                        m.cover,
+                        m.description,
+                        m.status,
+                        m.type,
+                        m.authors,
+                        m.genres,
+                        m.view_count,
+                        m.score,
+                        m.mal_id,
+                        m.ani_id,
+                        m.alternative_titles,
+                        m.created_at as manga_created_at,
+                        m.updated_at as manga_updated_at,
+                        ub.last_read_chapter_id,
+                        ts_rank(m.search_vector, websearch_to_tsquery('english', @query)) as rank
+                    FROM user_bookmarks ub
+                    INNER JOIN manga m ON ub.manga_id = m.id
+                    WHERE ub.user_id = @userId
+                    AND m.search_vector @@ websearch_to_tsquery('english', @query)
+                    ORDER BY rank DESC, ub.updated_at DESC
+                    LIMIT @limit OFFSET @offset";
+
+                var bookmarks = new List<BookmarkResponse>();
+                var bookmarkDict = new Dictionary<Guid, BookmarkResponse>();
+                var lastReadChapterIds = new Dictionary<Guid, Guid?>();
+
+                using (var cmd = new NpgsqlCommand(searchQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    cmd.Parameters.AddWithValue("query", query);
+                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                    cmd.Parameters.AddWithValue("offset", offset);
+
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var bookmarkId = reader.GetGuid(0);
+                            var bookmark = new BookmarkResponse
+                            {
+                                BookmarkId = bookmarkId,
+                                BookmarkCreatedAt = reader.GetDateTime(1),
+                                BookmarkUpdatedAt = reader.GetDateTime(2),
+                                MangaId = reader.GetGuid(3),
+                                Title = reader.GetString(4),
+                                Cover = reader.GetString(5),
+                                Description = reader.GetString(6),
+                                Status = reader.GetString(7),
+                                Type = Enum.Parse<MangaType>(reader.GetString(8), true),
+                                Authors = (string[])reader.GetValue(9),
+                                Genres = (string[])reader.GetValue(10),
+                                Views = (int)(long)reader.GetValue(11),
+                                Score = reader.GetDecimal(12),
+                                MalId = reader.IsDBNull(13) ? null : reader.GetInt32(13),
+                                AniId = reader.IsDBNull(14) ? null : reader.GetInt32(14),
+                                AlternativeTitles = (string[])reader.GetValue(15),
+                                MangaCreatedAt = reader.GetDateTime(16),
+                                MangaUpdatedAt = reader.GetDateTime(17),
+                                LastReadChapter = new BookmarkChapter(),
+                                Chapters = new List<BookmarkChapter>()
+                            };
+
+                            lastReadChapterIds[bookmarkId] = reader.IsDBNull(18) ? null : reader.GetGuid(18);
+                            bookmarks.Add(bookmark);
+                            bookmarkDict[bookmark.MangaId] = bookmark;
+                        }
+                    }
+                }
+
+                if (bookmarks.Count > 0)
+                {
+                    // Fetch all chapters for all manga in a single query
+                    var mangaIds = bookmarks.Select(b => b.MangaId).ToArray();
+                    var allChaptersQuery = @"
+                        SELECT manga_id, id, number, title, pages, created_at, updated_at
+                        FROM chapters
+                        WHERE manga_id = ANY(@mangaIds)
+                        ORDER BY manga_id, number ASC";
+
+                    using (var chaptersCmd = new NpgsqlCommand(allChaptersQuery, _postgresService.Connection))
+                    {
+                        chaptersCmd.Parameters.AddWithValue("mangaIds", mangaIds);
+
+                        using (var chaptersReader = await chaptersCmd.ExecuteReaderAsync())
+                        {
+                            while (await chaptersReader.ReadAsync())
+                            {
+                                var mangaId = chaptersReader.GetGuid(0);
+                                var chapter = new BookmarkChapter
+                                {
+                                    Id = chaptersReader.GetGuid(1),
+                                    Number = chaptersReader.GetFloat(2),
+                                    Title = chaptersReader.GetString(3),
+                                    Pages = chaptersReader.GetInt16(4),
+                                    CreatedAt = chaptersReader.GetDateTime(5),
+                                    UpdatedAt = chaptersReader.GetDateTime(6)
+                                };
+
+                                if (bookmarkDict.TryGetValue(mangaId, out var bookmark))
+                                {
+                                    bookmark.Chapters.Add(chapter);
+                                }
+                            }
+                        }
+                    }
+
+                    // Set last read chapters
+                    foreach (var bookmark in bookmarks)
+                    {
+                        if (lastReadChapterIds.TryGetValue(bookmark.BookmarkId, out var lastReadId) && lastReadId.HasValue)
+                        {
+                            var lastReadChapter = bookmark.Chapters.FirstOrDefault(c => c.Id == lastReadId.Value);
+                            if (lastReadChapter != null)
+                            {
+                                bookmark.LastReadChapter = lastReadChapter;
+                            }
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
+                {
+                    Items = bookmarks,
+                    TotalItems = (int)totalCount,
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
+                }));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to search bookmarks", ex.Message));
             }
         }
 
