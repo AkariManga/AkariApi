@@ -107,6 +107,7 @@ builder.Services.AddSingleton(adminClient);
 
 builder.Services.AddScoped<AkariApi.Services.SupabaseService>();
 builder.Services.AddScoped<AkariApi.Services.PostgresService>();
+builder.Services.AddScoped<AkariApi.Services.NotificationService>();
 
 builder.Services.AddCors(options =>
 {
