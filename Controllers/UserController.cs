@@ -4,6 +4,7 @@ using AkariApi.Services;
 using AkariApi.Helpers;
 using Supabase.Gotrue;
 using AkariApi.Attributes;
+using Npgsql;
 
 namespace AkariApi.Controllers
 {
@@ -14,10 +15,12 @@ namespace AkariApi.Controllers
     public class UserController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;
+        private readonly PostgresService _postgresService;
 
-        public UserController(SupabaseService supabaseService)
+        public UserController(SupabaseService supabaseService, PostgresService postgresService)
         {
             _supabaseService = supabaseService;
+            _postgresService = postgresService;
         }
 
         /// <summary>
@@ -39,14 +42,15 @@ namespace AkariApi.Controllers
             try
             {
                 await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
-                var existingUser = await _supabaseService.Client
-                    .From<ProfileDto>()
-                    .Select("username")
-                    .Where(u => u.Username == request.UserName)
-                    .Get();
-                if (existingUser != null && existingUser.Models.Count > 0)
+                using var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM profiles WHERE username = @username", _postgresService.Connection);
+                cmd.Parameters.AddWithValue("username", request.UserName);
+                var result = await cmd.ExecuteScalarAsync();
+                var count = result != null ? Convert.ToInt64(result) : 0;
+                if (count > 0)
                 {
+                    await _postgresService.CloseAsync();
                     return BadRequest(ErrorResponse.Create("Invalid request", "Username already taken"));
                 }
 
@@ -58,7 +62,17 @@ namespace AkariApi.Controllers
 
                 if (session == null)
                 {
+                    await _postgresService.CloseAsync();
                     return StatusCode(500, ErrorResponse.Create("Failed to sign up", "User creation returned null"));
+                }
+
+                if (session.User != null && !string.IsNullOrEmpty(session.User.Id))
+                {
+                    using var insertCmd = new NpgsqlCommand("INSERT INTO profiles (id, username, display_name) VALUES (@id, @username, @display_name)", _postgresService.Connection);
+                    insertCmd.Parameters.AddWithValue("id", Guid.Parse(session.User.Id));
+                    insertCmd.Parameters.AddWithValue("username", request.UserName);
+                    insertCmd.Parameters.AddWithValue("display_name", request.DisplayName);
+                    await insertCmd.ExecuteNonQueryAsync();
                 }
 
                 if (!string.IsNullOrEmpty(session.AccessToken))
@@ -70,10 +84,12 @@ namespace AkariApi.Controllers
                     }
                 }
 
+                await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<Session>.Create(session));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to sign up", ex.Message));
             }
         }
@@ -97,40 +113,43 @@ namespace AkariApi.Controllers
             try
             {
                 await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
 
                 var session = await _supabaseService.Client.Auth.SignIn(request.Email, request.Password);
 
                 if (session == null)
                 {
+                    await _postgresService.CloseAsync();
                     return StatusCode(500, ErrorResponse.Create("Failed to sign in", "Authentication returned null"));
                 }
 
                 if (session.User == null || string.IsNullOrEmpty(session.User.Id))
                 {
+                    await _postgresService.CloseAsync();
                     return StatusCode(500, ErrorResponse.Create("Failed to sign in", "User ID not found in session"));
                 }
 
                 if (!Guid.TryParse(session.User.Id, out var userId))
                 {
+                    await _postgresService.CloseAsync();
                     return StatusCode(500, ErrorResponse.Create("Failed to sign in", "Invalid user ID format"));
                 }
 
                 // Fetch user profile from profiles table
-                var profile = await _supabaseService.Client
-                    .From<ProfileDto>()
-                    .Where(p => p.Id == userId)
-                    .Single();
-
-                if (profile == null)
+                using var cmd = new NpgsqlCommand("SELECT username, display_name FROM profiles WHERE id = @id", _postgresService.Connection);
+                cmd.Parameters.AddWithValue("id", userId);
+                using var reader = await cmd.ExecuteReaderAsync();
+                if (!await reader.ReadAsync())
                 {
+                    await _postgresService.CloseAsync();
                     return StatusCode(500, ErrorResponse.Create("Failed to sign in", "Profile not found"));
                 }
 
                 var userResponse = new UserResponse
                 {
-                    UserId = profile.Id,
-                    Username = profile.Username,
-                    DisplayName = profile.DisplayName
+                    UserId = userId,
+                    Username = reader.GetString(0),
+                    DisplayName = reader.GetString(1)
                 };
 
                 if (!string.IsNullOrEmpty(session.AccessToken))
@@ -142,10 +161,12 @@ namespace AkariApi.Controllers
                     }
                 }
 
+                await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<UserResponse>.Create(userResponse));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to sign in", ex.Message));
             }
         }
@@ -198,44 +219,49 @@ namespace AkariApi.Controllers
             try
             {
                 await _supabaseService.InitializeAsync();
+                await _postgresService.OpenAsync();
                 var user = await _supabaseService.Client.Auth.GetUser(token);
                 if (user == null)
                 {
+                    await _postgresService.CloseAsync();
                     return Unauthorized(ErrorResponse.Create("Unauthorized", "Invalid token"));
                 }
 
                 if (string.IsNullOrEmpty(user.Id))
                 {
+                    await _postgresService.CloseAsync();
                     return Unauthorized(ErrorResponse.Create("Unauthorized", "User ID not found"));
                 }
 
                 if (!Guid.TryParse(user.Id, out var userId))
                 {
+                    await _postgresService.CloseAsync();
                     return Unauthorized(ErrorResponse.Create("Unauthorized", "Invalid user ID format"));
                 }
 
                 // Fetch user profile from profiles table
-                var profile = await _supabaseService.Client
-                    .From<ProfileDto>()
-                    .Where(p => p.Id == userId)
-                    .Single();
-
-                if (profile == null)
+                using var cmd = new NpgsqlCommand("SELECT username, display_name FROM profiles WHERE id = @id", _postgresService.Connection);
+                cmd.Parameters.AddWithValue("id", userId);
+                using var reader = await cmd.ExecuteReaderAsync();
+                if (!await reader.ReadAsync())
                 {
+                    await _postgresService.CloseAsync();
                     return Unauthorized(ErrorResponse.Create("Unauthorized", "Profile not found"));
                 }
 
                 var userResponse = new UserResponse
                 {
-                    UserId = profile.Id,
-                    Username = profile.Username,
-                    DisplayName = profile.DisplayName
+                    UserId = userId,
+                    Username = reader.GetString(0),
+                    DisplayName = reader.GetString(1)
                 };
 
+                await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<UserResponse>.Create(userResponse));
             }
             catch (Exception ex)
             {
+                await _postgresService.CloseAsync();
                 return Unauthorized(ErrorResponse.Create("Unauthorized", ex.Message));
             }
         }
