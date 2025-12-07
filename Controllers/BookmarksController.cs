@@ -429,30 +429,16 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                // Get bookmark
-                Guid? lastReadChapterId = null;
-                using (var cmd = new NpgsqlCommand("SELECT last_read_chapter_id FROM user_bookmarks WHERE user_id = @userId AND manga_id = @mangaId", _postgresService.Connection))
+                var query = @"
+                    SELECT c.id, c.number, c.title, c.pages, c.created_at, c.updated_at
+                    FROM user_bookmarks ub
+                    INNER JOIN chapters c ON ub.last_read_chapter_id = c.id
+                    WHERE ub.user_id = @userId AND ub.manga_id = @mangaId";
+
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("userId", userId);
                     cmd.Parameters.AddWithValue("mangaId", mangaId);
-
-                    var result = await cmd.ExecuteScalarAsync();
-                    if (result != null && result != DBNull.Value)
-                    {
-                        lastReadChapterId = (Guid)result;
-                    }
-                }
-
-                if (lastReadChapterId == null)
-                {
-                    await _postgresService.CloseAsync();
-                    return Ok(SuccessResponse<LastReadResponse>.Create(null!));
-                }
-
-                // Get chapter details
-                using (var cmd = new NpgsqlCommand("SELECT id, number, title, pages, created_at, updated_at FROM chapters WHERE id = @chapterId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("chapterId", lastReadChapterId);
 
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
