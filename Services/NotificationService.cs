@@ -25,70 +25,122 @@ namespace AkariApi.Services
 
         public async Task SendNotificationToBookmarkedUsersAsync(Guid mangaId, string title, string body, string url)
         {
-            await _postgresService.OpenAsync();
+            var subscriptions = new List<(string endpoint, string p256dh, string auth, Guid userId, int unreadCount)>();
+            var expiredEndpoints = new List<string>();
 
-            // Get user_ids who have this manga bookmarked
-            var userIds = new List<Guid>();
-            using (var cmd = new NpgsqlCommand("SELECT user_id FROM user_bookmarks WHERE manga_id = @mangaId", _postgresService.Connection))
+            try
             {
-                cmd.Parameters.AddWithValue("mangaId", mangaId);
-                using (var reader = await cmd.ExecuteReaderAsync())
+                await _postgresService.OpenAsync();
+
+                // Single optimized query joining bookmarks, subscriptions, and getting unread count
+                const string query = @"
+                    SELECT DISTINCT
+                        ps.endpoint,
+                        ps.p256dh,
+                        ps.auth,
+                        ps.user_id,
+                        COALESCE(
+                            (SELECT COUNT(*)
+                             FROM user_bookmarks_unread
+                             WHERE user_id = ps.user_id),
+                            0
+                        ) as unread_count
+                    FROM push_subscriptions ps
+                    INNER JOIN user_bookmarks ub ON ps.user_id = ub.user_id
+                    WHERE ub.manga_id = @mangaId";
+
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
-                    while (await reader.ReadAsync())
+                    cmd.Parameters.AddWithValue("mangaId", mangaId);
+                    using (var reader = await cmd.ExecuteReaderAsync())
                     {
-                        userIds.Add(reader.GetGuid(0));
+                        while (await reader.ReadAsync())
+                        {
+                            subscriptions.Add((
+                                reader.GetString(0),
+                                reader.GetString(1),
+                                reader.GetString(2),
+                                reader.GetGuid(3),
+                                reader.GetInt32(4)
+                            ));
+                        }
                     }
                 }
             }
-
-            if (userIds.Count == 0)
+            finally
             {
                 await _postgresService.CloseAsync();
+            }
+
+            if (subscriptions.Count == 0)
+            {
                 return;
             }
 
-            // For each user, get their subscriptions
-            var subscriptions = new List<(string endpoint, string p256dh, string auth)>();
-            using (var cmd = new NpgsqlCommand("SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ANY(@userIds)", _postgresService.Connection))
-            {
-                cmd.Parameters.AddWithValue("userIds", userIds.ToArray());
-                using (var reader = await cmd.ExecuteReaderAsync())
-                {
-                    while (await reader.ReadAsync())
-                    {
-                        subscriptions.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2)));
-                    }
-                }
-            }
-
-            await _postgresService.CloseAsync();
-
-            // Prepare payload
-            var payload = new
-            {
-                title,
-                body,
-                url,
-                mangaId = mangaId.ToString(),
-                tag = $"manga-{mangaId}"
-            };
-            var jsonPayload = JsonSerializer.Serialize(payload);
-
-            // Send to each subscription
-            var tasks = subscriptions.Select(async sub =>
+            // Send to each subscription in parallel
+            var sendTasks = subscriptions.Select(async sub =>
             {
                 try
                 {
+                    // Prepare payload with user-specific badge count
+                    var payload = new
+                    {
+                        title,
+                        body,
+                        url,
+                        mangaId = mangaId.ToString(),
+                        tag = $"manga-{mangaId}",
+                        badge = sub.unreadCount
+                    };
+                    var jsonPayload = JsonSerializer.Serialize(payload);
+
                     var subscription = new PushSubscription(sub.endpoint, sub.p256dh, sub.auth);
                     await _webPushClient.SendNotificationAsync(subscription, jsonPayload);
                 }
+                catch (WebPushException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Gone || ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    // Subscription expired or invalid
+                    lock (expiredEndpoints)
+                    {
+                        expiredEndpoints.Add(sub.endpoint);
+                    }
+                    Console.WriteLine($"Expired subscription removed: {sub.endpoint}");
+                }
                 catch (Exception ex)
                 {
-                    // Log error, but continue
-                    Console.WriteLine($"Failed to send notification: {ex.Message}");
+                    Console.WriteLine($"Failed to send notification to {sub.endpoint}: {ex.Message}");
                 }
             });
-            await Task.WhenAll(tasks);
+
+            await Task.WhenAll(sendTasks);
+
+            // Clean up expired subscriptions
+            if (expiredEndpoints.Count > 0)
+            {
+                await RemoveExpiredSubscriptionsAsync(expiredEndpoints);
+            }
+        }
+
+        private async Task RemoveExpiredSubscriptionsAsync(List<string> endpoints)
+        {
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                using (var cmd = new NpgsqlCommand("DELETE FROM push_subscriptions WHERE endpoint = ANY(@endpoints)", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("endpoints", endpoints.ToArray());
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to remove expired subscriptions: {ex.Message}");
+            }
+            finally
+            {
+                await _postgresService.CloseAsync();
+            }
         }
     }
 }
