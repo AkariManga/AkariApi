@@ -3,6 +3,7 @@ using AkariApi.Services;
 using Npgsql;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using AkariApi.Helpers;
 
 namespace AkariApi.Services
 {
@@ -25,6 +26,12 @@ namespace AkariApi.Services
 
         public async Task SendNotificationToBookmarkedUsersAsync(Guid mangaId, string title, string body, string url)
         {
+            var encryptionKey = _configuration["ENCRYPTION_KEY"];
+            if (string.IsNullOrEmpty(encryptionKey))
+            {
+                throw new InvalidOperationException("Encryption key not configured");
+            }
+
             var subscriptions = new List<(string endpoint, string p256dh, string auth, Guid userId, int unreadCount)>();
             var expiredEndpoints = new List<string>();
 
@@ -57,11 +64,11 @@ namespace AkariApi.Services
                         while (await reader.ReadAsync())
                         {
                             subscriptions.Add((
-                                reader.GetString(0),
-                                reader.GetString(1),
-                                reader.GetString(2),
-                                reader.GetGuid(3),
-                                reader.GetInt32(4)
+                                reader.GetString(0),  // endpoint
+                                EncryptionHelper.Decrypt(reader.GetString(1), encryptionKey),  // p256dh
+                                EncryptionHelper.Decrypt(reader.GetString(2), encryptionKey),  // auth
+                                reader.GetGuid(3),     // user_id
+                                reader.GetInt32(4)     // unread_count
                             ));
                         }
                     }

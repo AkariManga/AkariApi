@@ -45,6 +45,12 @@ namespace AkariApi.Controllers
                 return BadRequest(ErrorResponse.Create("Bad Request", "Invalid request data"));
             }
 
+            var encryptionKey = _configuration["ENCRYPTION_KEY"];
+            if (string.IsNullOrEmpty(encryptionKey))
+            {
+                return StatusCode(500, ErrorResponse.Create("Server error", "Encryption key not configured"));
+            }
+
             try
             {
                 await _supabaseService.InitializeAsync();
@@ -61,8 +67,8 @@ namespace AkariApi.Controllers
                 {
                     cmd.Parameters.AddWithValue("userId", userId);
                     cmd.Parameters.AddWithValue("endpoint", request.Endpoint);
-                    cmd.Parameters.AddWithValue("p256dh", request.P256dh);
-                    cmd.Parameters.AddWithValue("auth", request.Auth);
+                    cmd.Parameters.AddWithValue("p256dh", EncryptionHelper.Encrypt(request.P256dh, encryptionKey));
+                    cmd.Parameters.AddWithValue("auth", EncryptionHelper.Encrypt(request.Auth, encryptionKey));
 
                     await cmd.ExecuteNonQueryAsync();
                 }
