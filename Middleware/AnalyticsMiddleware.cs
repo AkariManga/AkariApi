@@ -354,8 +354,13 @@ public class AnalyticsMiddleware(RequestDelegate next, AnalyticsService analytic
 
             try
             {
-                var requestData = _analyticsService.CreateRequestData(context, watch.ElapsedMilliseconds, createdAt);
-                _analyticsService.LogRequest(requestData);
+                // Check if the endpoint has the DisableAnalytics attribute
+                var endpoint = context.GetEndpoint();
+                if (endpoint?.Metadata?.GetMetadata<AkariApi.Attributes.DisableAnalyticsAttribute>() == null)
+                {
+                    var requestData = _analyticsService.CreateRequestData(context, watch.ElapsedMilliseconds, createdAt);
+                    _analyticsService.LogRequest(requestData);
+                }
             }
             catch (Exception ex)
             {

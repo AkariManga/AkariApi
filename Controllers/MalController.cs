@@ -12,6 +12,7 @@ namespace AkariApi.Controllers
     [Route("v2/mal")]
     [ApiVersion("2.0")]
     [Produces("application/json")]
+    [DisableAnalytics]
     public class MalController : ControllerBase
     {
         private readonly string clientId;

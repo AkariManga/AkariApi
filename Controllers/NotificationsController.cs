@@ -93,6 +93,7 @@ namespace AkariApi.Controllers
         /// <param name="request">The notification payload.</param>
         /// <returns>Success message.</returns>
         [HttpPost("send")]
+        [DisableAnalytics]
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
