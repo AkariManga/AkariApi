@@ -112,5 +112,78 @@ namespace AkariApi.Controllers
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga by author", ex.Message));
             }
         }
+
+        /// <summary>
+        /// Get list of authors
+        /// </summary>
+        /// <param name="page">The page number.</param>
+        /// <param name="pageSize">The number of items per page.</param>
+        /// <returns>A paginated list of authors.</returns>
+        [HttpGet("list")]
+        [CacheControl(CacheDuration.OneHour, CacheDuration.TwelveHours)]
+        [ProducesResponseType(typeof(SuccessResponse<AuthorListResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetAuthorsList([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 500)] int pageSize = 100)
+        {
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
+            var offset = (clampedPage - 1) * clampedPageSize;
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var query = @"
+                    WITH author_counts AS (
+                        SELECT unnest(authors) as author, COUNT(*) as manga_count
+                        FROM manga
+                        GROUP BY unnest(authors)
+                    ),
+                    paginated_authors AS (
+                        SELECT author, manga_count, COUNT(*) OVER() as total
+                        FROM author_counts
+                        ORDER BY manga_count DESC
+                        LIMIT @limit OFFSET @offset
+                    )
+                    SELECT author, manga_count, total FROM paginated_authors";
+                var authors = new List<AuthorResponse>();
+                long totalCount = 0;
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                    cmd.Parameters.AddWithValue("offset", offset);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var author = new AuthorResponse
+                            {
+                                Name = reader.GetString(0),
+                                MangaCount = reader.GetInt32(1)
+                            };
+                            if (totalCount == 0)
+                            {
+                                totalCount = reader.GetInt64(2);
+                            }
+                            authors.Add(author);
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<AuthorListResponse>.Create(new AuthorListResponse
+                {
+                    Items = authors,
+                    TotalItems = (int)totalCount,
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
+                }));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve authors list", ex.Message));
+            }
+        }
     }
 }

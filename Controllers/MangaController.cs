@@ -1008,5 +1008,83 @@ namespace AkariApi.Controllers
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga IDs", ex.Message));
             }
         }
+
+        /// <summary>
+        /// Get list of manga with their chapter IDs
+        /// </summary>
+        /// <param name="page">The page number.</param>
+        /// <param name="pageSize">The number of items per page.</param>
+        /// <returns>A list of manga with their chapter IDs.</returns>
+        [HttpGet("chapter/ids")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.OneHour)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaChapterIdsResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetMangaChapterIds(
+            [FromQuery, Range(1, int.MaxValue)] int page = 1,
+            [FromQuery, Range(1, 500)] int pageSize = 100
+        )
+        {
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize, 1000, 100);
+            var offset = (clampedPage - 1) * clampedPageSize;
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var query = @"
+                    WITH page_manga AS (
+                        SELECT id, COUNT(*) OVER() as total
+                        FROM manga
+                        ORDER BY view_count DESC
+                        OFFSET @offset LIMIT @limit
+                    )
+                    SELECT pm.id,
+                        (SELECT array_agg(number ORDER BY number)
+                            FROM chapters
+                            WHERE manga_id = pm.id) as chapter_numbers,
+                        pm.total
+                    FROM page_manga pm
+                    ORDER BY pm.id";
+                var pairs = new List<MangaChapterIdsPair>();
+                long totalCount = 0;
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                    cmd.Parameters.AddWithValue("offset", offset);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var mangaId = reader.GetGuid(0);
+                            var chapterNumbers = reader.IsDBNull(1) ? Array.Empty<float>() : (float[])reader.GetValue(1);
+                            if (totalCount == 0)
+                            {
+                                totalCount = reader.GetInt64(2);
+                            }
+                            pairs.Add(new MangaChapterIdsPair
+                            {
+                                MangaId = mangaId,
+                                ChapterIds = chapterNumbers.ToList()
+                            });
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<MangaChapterIdsResponse>.Create(new MangaChapterIdsResponse
+                {
+                    Items = pairs,
+                    TotalItems = (int)totalCount,
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
+                }));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga chapter IDs", ex.Message));
+            }
+        }
     }
 }

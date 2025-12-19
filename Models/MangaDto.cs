@@ -199,4 +199,32 @@ namespace AkariApi.Models
         [JsonPropertyName("ids")]
         public new List<Guid> Items { get; set; } = new List<Guid>();
     }
+
+    public class MangaChapterIdsPair
+    {
+        [Required]
+        [JsonPropertyName("mangaId")]
+        public Guid MangaId { get; set; }
+
+        [Required]
+        [JsonPropertyName("chapterIds")]
+        public List<float> ChapterIds { get; set; } = new List<float>();
+    }
+
+    public class MangaChapterIdsResponse : PaginatedResponse<MangaChapterIdsPair>
+    {
+    }
+
+    public class AuthorResponse
+    {
+        [Required]
+        public string Name { get; set; } = string.Empty;
+
+        [Required]
+        public int MangaCount { get; set; }
+    }
+
+    public class AuthorListResponse : PaginatedResponse<AuthorResponse>
+    {
+    }
 }
