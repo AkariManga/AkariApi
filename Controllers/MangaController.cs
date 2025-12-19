@@ -949,5 +949,64 @@ namespace AkariApi.Controllers
                 return StatusCode(500, ErrorResponse.Create("Failed to search manga", ex.Message));
             }
         }
+
+        /// <summary>
+        /// Get list of manga IDs
+        /// </summary>
+        /// <param name="page">The page number.</param>
+        /// <param name="pageSize">The number of items per page.</param>
+        /// <returns>A list of manga IDs.</returns>
+        [HttpGet("ids")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.OneHour)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaIdsResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetMangaIds(
+            [FromQuery, Range(1, int.MaxValue)] int page = 1,
+            [FromQuery, Range(1, 1000)] int pageSize = 100
+        )
+        {
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize, 1000, 100);
+            var offset = (clampedPage - 1) * clampedPageSize;
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var query = "SELECT id, COUNT(*) OVER() as total FROM manga ORDER BY id LIMIT @limit OFFSET @offset";
+                var ids = new List<Guid>();
+                long totalCount = 0;
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                    cmd.Parameters.AddWithValue("offset", offset);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            ids.Add(reader.GetGuid(0));
+                            if (totalCount == 0)
+                            {
+                                totalCount = reader.GetInt64(1);
+                            }
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<MangaIdsResponse>.Create(new MangaIdsResponse
+                {
+                    Items = ids,
+                    TotalItems = (int)totalCount,
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
+                }));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga IDs", ex.Message));
+            }
+        }
     }
 }

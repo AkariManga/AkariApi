@@ -193,4 +193,10 @@ namespace AkariApi.Models
         [MaxLength(50)]
         public List<int> MalIds { get; set; } = new List<int>();
     }
+
+    public class MangaIdsResponse : PaginatedResponse<Guid>
+    {
+        [JsonPropertyName("ids")]
+        public new List<Guid> Items { get; set; } = new List<Guid>();
+    }
 }
