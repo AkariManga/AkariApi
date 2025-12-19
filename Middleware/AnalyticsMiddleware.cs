@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AkariApi.Attributes;
 using AkariApi.Services;
 using Npgsql;
 
@@ -356,7 +357,7 @@ public class AnalyticsMiddleware(RequestDelegate next, AnalyticsService analytic
             {
                 // Check if the endpoint has the DisableAnalytics attribute
                 var endpoint = context.GetEndpoint();
-                if (endpoint?.Metadata?.GetMetadata<AkariApi.Attributes.DisableAnalyticsAttribute>() == null)
+                if (endpoint?.Metadata?.GetMetadata<DisableAnalyticsAttribute>() == null)
                 {
                     var requestData = _analyticsService.CreateRequestData(context, watch.ElapsedMilliseconds, createdAt);
                     _analyticsService.LogRequest(requestData);
