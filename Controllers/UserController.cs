@@ -329,7 +329,6 @@ namespace AkariApi.Controllers
                     using var reader = await cmd.ExecuteReaderAsync();
                     if (!await reader.ReadAsync())
                     {
-                        await _postgresService.CloseAsync();
                         return NotFound(ErrorResponse.Create("User not found", status: 404));
                     }
 
@@ -347,14 +346,16 @@ namespace AkariApi.Controllers
                         TotalLists = reader.GetInt64(8)
                     };
 
-                    await _postgresService.CloseAsync();
                     return Ok(SuccessResponse<UserProfileDetailsResponse>.Create(profileDetails));
                 }
             }
             catch (Exception ex)
             {
-                await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve user profile", ex.Message));
+            }
+            finally
+            {
+                await _postgresService.CloseAsync();
             }
         }
     }
