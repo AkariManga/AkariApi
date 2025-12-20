@@ -25,25 +25,24 @@ namespace AkariApi.Models
         [Required]
         public string DisplayName { get; set; } = string.Empty;
 
-        [Required]
-        public DateTimeOffset CreatedAt { get; set; }
+        public DateTimeOffset? CreatedAt { get; set; }
 
         [Required]
-        public int TotalComments { get; set; }
+        public long TotalComments { get; set; }
 
         [Required]
-        public int TotalUpvotes { get; set; }
+        public long TotalUpvotes { get; set; }
 
         [Required]
-        public int TotalDownvotes { get; set; }
+        public long TotalDownvotes { get; set; }
 
         [Required]
-        public int TotalBookmarks { get; set; }
+        public long TotalBookmarks { get; set; }
 
         [Required]
-        public int TotalUploads { get; set; }
+        public long TotalUploads { get; set; }
 
         [Required]
-        public int TotalLists { get; set; }
+        public long TotalLists { get; set; }
     }
 }

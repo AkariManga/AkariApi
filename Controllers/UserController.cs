@@ -313,13 +313,13 @@ namespace AkariApi.Controllers
                         UserId = userId,
                         Username = reader.GetString(0),
                         DisplayName = reader.GetString(1),
-                        CreatedAt = reader.IsDBNull(2) ? DateTimeOffset.UtcNow : reader.GetFieldValue<DateTimeOffset>(2),
-                        TotalComments = Convert.ToInt32(reader.GetInt64(3)),
-                        TotalUpvotes = Convert.ToInt32(reader.GetInt64(4)),
-                        TotalDownvotes = Convert.ToInt32(reader.GetInt64(5)),
-                        TotalBookmarks = Convert.ToInt32(reader.GetInt64(6)),
-                        TotalUploads = Convert.ToInt32(reader.GetInt64(7)),
-                        TotalLists = Convert.ToInt32(reader.GetInt64(8))
+                        CreatedAt = reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
+                        TotalComments = reader.GetInt64(3),
+                        TotalUpvotes = reader.GetInt64(4),
+                        TotalDownvotes = reader.GetInt64(5),
+                        TotalBookmarks = reader.GetInt64(6),
+                        TotalUploads = reader.GetInt64(7),
+                        TotalLists = reader.GetInt64(8)
                     };
 
                     await _postgresService.CloseAsync();
