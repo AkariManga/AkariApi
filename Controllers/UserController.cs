@@ -282,18 +282,23 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                // Fetch user basic info from profiles table along with creation timestamp from auth.users
-                var userQuery = @"
-                    SELECT p.username, p.display_name, u.created_at
+                // Fetch all user data in a single query for efficiency
+                var query = @"
+                    SELECT 
+                        p.username, 
+                        p.display_name, 
+                        u.created_at,
+                        (SELECT COUNT(*) FROM comments WHERE user_id = @id AND deleted = false) AS total_comments,
+                        (SELECT COALESCE(SUM(upvotes), 0) FROM comments WHERE user_id = @id AND deleted = false) AS total_upvotes,
+                        (SELECT COALESCE(SUM(downvotes), 0) FROM comments WHERE user_id = @id AND deleted = false) AS total_downvotes,
+                        (SELECT COUNT(*) FROM user_bookmarks WHERE user_id = @id) AS total_bookmarks,
+                        (SELECT COUNT(*) FROM uploads WHERE user_id = @id) AS total_uploads,
+                        (SELECT COUNT(*) FROM user_manga_lists WHERE user_id = @id) AS total_lists
                     FROM profiles p
                     LEFT JOIN auth.users u ON p.id = u.id
                     WHERE p.id = @id";
 
-                string username;
-                string displayName;
-                DateTimeOffset createdAt;
-
-                using (var cmd = new NpgsqlCommand(userQuery, _postgresService.Connection))
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("id", userId);
                     using var reader = await cmd.ExecuteReaderAsync();
@@ -303,77 +308,23 @@ namespace AkariApi.Controllers
                         return NotFound(ErrorResponse.Create("User not found", status: 404));
                     }
 
-                    username = reader.GetString(0);
-                    displayName = reader.GetString(1);
-                    createdAt = reader.IsDBNull(2) ? DateTimeOffset.UtcNow : reader.GetDateTime(2);
-                }
-
-                // Get total comments count (excluding deleted comments)
-                int totalComments;
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM comments WHERE user_id = @userId AND deleted = false", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    var result = await cmd.ExecuteScalarAsync();
-                    totalComments = result != null ? Convert.ToInt32(result) : 0;
-                }
-
-                // Get total upvotes and downvotes on user's comments
-                int totalUpvotes = 0;
-                int totalDownvotes = 0;
-                using (var cmd = new NpgsqlCommand("SELECT COALESCE(SUM(upvotes), 0), COALESCE(SUM(downvotes), 0) FROM comments WHERE user_id = @userId AND deleted = false", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    using var reader = await cmd.ExecuteReaderAsync();
-                    if (await reader.ReadAsync())
+                    var profileDetails = new UserProfileDetailsResponse
                     {
-                        totalUpvotes = reader.GetInt32(0);
-                        totalDownvotes = reader.GetInt32(1);
-                    }
+                        UserId = userId,
+                        Username = reader.GetString(0),
+                        DisplayName = reader.GetString(1),
+                        CreatedAt = reader.IsDBNull(2) ? DateTimeOffset.UtcNow : reader.GetFieldValue<DateTimeOffset>(2),
+                        TotalComments = Convert.ToInt32(reader.GetInt64(3)),
+                        TotalUpvotes = Convert.ToInt32(reader.GetInt64(4)),
+                        TotalDownvotes = Convert.ToInt32(reader.GetInt64(5)),
+                        TotalBookmarks = Convert.ToInt32(reader.GetInt64(6)),
+                        TotalUploads = Convert.ToInt32(reader.GetInt64(7)),
+                        TotalLists = Convert.ToInt32(reader.GetInt64(8))
+                    };
+
+                    await _postgresService.CloseAsync();
+                    return Ok(SuccessResponse<UserProfileDetailsResponse>.Create(profileDetails));
                 }
-
-                // Get total bookmarks count
-                int totalBookmarks;
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM user_bookmarks WHERE user_id = @userId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    var result = await cmd.ExecuteScalarAsync();
-                    totalBookmarks = result != null ? Convert.ToInt32(result) : 0;
-                }
-
-                // Get total uploads count
-                int totalUploads;
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE user_id = @userId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    var result = await cmd.ExecuteScalarAsync();
-                    totalUploads = result != null ? Convert.ToInt32(result) : 0;
-                }
-
-                // Get total manga lists count
-                int totalLists;
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM user_manga_lists WHERE user_id = @userId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    var result = await cmd.ExecuteScalarAsync();
-                    totalLists = result != null ? Convert.ToInt32(result) : 0;
-                }
-
-                var profileDetails = new UserProfileDetailsResponse
-                {
-                    UserId = userId,
-                    Username = username,
-                    DisplayName = displayName,
-                    CreatedAt = createdAt,
-                    TotalComments = totalComments,
-                    TotalUpvotes = totalUpvotes,
-                    TotalDownvotes = totalDownvotes,
-                    TotalBookmarks = totalBookmarks,
-                    TotalUploads = totalUploads,
-                    TotalLists = totalLists
-                };
-
-                await _postgresService.CloseAsync();
-                return Ok(SuccessResponse<UserProfileDetailsResponse>.Create(profileDetails));
             }
             catch (Exception ex)
             {
