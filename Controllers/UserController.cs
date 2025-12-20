@@ -288,14 +288,39 @@ namespace AkariApi.Controllers
                         p.username, 
                         p.display_name, 
                         u.created_at,
-                        (SELECT COUNT(*) FROM comments WHERE user_id = @id AND deleted = false) AS total_comments,
-                        (SELECT COALESCE(SUM(upvotes), 0) FROM comments WHERE user_id = @id AND deleted = false) AS total_upvotes,
-                        (SELECT COALESCE(SUM(downvotes), 0) FROM comments WHERE user_id = @id AND deleted = false) AS total_downvotes,
-                        (SELECT COUNT(*) FROM user_bookmarks WHERE user_id = @id) AS total_bookmarks,
-                        (SELECT COUNT(*) FROM uploads WHERE user_id = @id) AS total_uploads,
-                        (SELECT COUNT(*) FROM user_manga_lists WHERE user_id = @id) AS total_lists
+                        COALESCE(c.comment_count, 0) AS total_comments,
+                        COALESCE(c.total_upvotes, 0) AS total_upvotes,
+                        COALESCE(c.total_downvotes, 0) AS total_downvotes,
+                        COALESCE(b.bookmark_count, 0) AS total_bookmarks,
+                        COALESCE(up.upload_count, 0) AS total_uploads,
+                        COALESCE(l.list_count, 0) AS total_lists
                     FROM profiles p
                     LEFT JOIN auth.users u ON p.id = u.id
+                    LEFT JOIN (
+                        SELECT 
+                            user_id, 
+                            COUNT(*) AS comment_count,
+                            SUM(upvotes) AS total_upvotes,
+                            SUM(downvotes) AS total_downvotes
+                        FROM comments 
+                        WHERE deleted = false
+                        GROUP BY user_id
+                    ) c ON p.id = c.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS bookmark_count
+                        FROM user_bookmarks
+                        GROUP BY user_id
+                    ) b ON p.id = b.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS upload_count
+                        FROM uploads
+                        GROUP BY user_id
+                    ) up ON p.id = up.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS list_count
+                        FROM user_manga_lists
+                        GROUP BY user_id
+                    ) l ON p.id = l.user_id
                     WHERE p.id = @id";
 
                 using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
