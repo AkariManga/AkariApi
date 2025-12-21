@@ -26,7 +26,7 @@ namespace AkariApi.Filters
                                 Reference = new OpenApiReference
                                 {
                                     Type = ReferenceType.SecurityScheme,
-                                    Id = "CookieAuth"
+                                    Id = "Bearer Token"
                                 }
                             },
                             new string[] {}

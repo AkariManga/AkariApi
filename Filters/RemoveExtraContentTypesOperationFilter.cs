@@ -11,7 +11,7 @@ namespace AkariApi.Filters
             {
                 // Keep only application/json, remove others like text/json and application/*+json
                 var keysToRemove = operation.RequestBody.Content.Keys
-                    .Where(key => key != "application/json")
+                    .Where(key => key != "application/json" && key != "multipart/form-data")
                     .ToList();
 
                 foreach (var key in keysToRemove)

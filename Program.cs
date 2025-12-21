@@ -126,7 +126,15 @@ app.UseSwagger(options =>
 {
     options.PreSerializeFilters.Add((swaggerDoc, httpReq) =>
     {
-        httpReq.HttpContext.Response.Headers["Cache-Control"] = "no-cache";
+        var response = httpReq.HttpContext.Response;
+
+        response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0";
+        response.Headers["Pragma"] = "no-cache";
+        response.Headers["Expires"] = "0";
+
+        // Remove conditional headers
+        response.Headers.Remove("Last-Modified");
+        response.Headers.Remove("ETag");
     });
 });
 app.UseSwaggerUI(options =>

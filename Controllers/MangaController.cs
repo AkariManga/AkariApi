@@ -972,7 +972,7 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                var query = "SELECT id, COUNT(*) OVER() as total FROM manga ORDER BY id LIMIT @limit OFFSET @offset";
+                var query = "SELECT id, COUNT(*) OVER() as total FROM manga ORDER BY view_count DESC LIMIT @limit OFFSET @offset";
                 var ids = new List<Guid>();
                 long totalCount = 0;
                 using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
