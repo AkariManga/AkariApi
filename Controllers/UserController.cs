@@ -265,5 +265,97 @@ namespace AkariApi.Controllers
                 return Unauthorized(ErrorResponse.Create("Unauthorized", ex.Message));
             }
         }
+
+        /// <summary>
+        /// Get user profile details by user ID
+        /// </summary>
+        /// <param name="userId">The unique identifier of the user.</param>
+        /// <returns>The detailed user profile information including statistics.</returns>
+        [HttpGet("{userId}")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes)]
+        [ProducesResponseType(typeof(SuccessResponse<UserProfileDetailsResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetUserById(Guid userId)
+        {
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                // Fetch all user data in a single query for efficiency
+                var query = @"
+                    SELECT 
+                        p.username, 
+                        p.display_name, 
+                        u.created_at,
+                        COALESCE(c.comment_count, 0) AS total_comments,
+                        COALESCE(c.total_upvotes, 0) AS total_upvotes,
+                        COALESCE(c.total_downvotes, 0) AS total_downvotes,
+                        COALESCE(b.bookmark_count, 0) AS total_bookmarks,
+                        COALESCE(up.upload_count, 0) AS total_uploads,
+                        COALESCE(l.list_count, 0) AS total_lists
+                    FROM profiles p
+                    LEFT JOIN auth.users u ON p.id = u.id
+                    LEFT JOIN (
+                        SELECT 
+                            user_id, 
+                            COUNT(*) AS comment_count,
+                            SUM(upvotes) AS total_upvotes,
+                            SUM(downvotes) AS total_downvotes
+                        FROM comments 
+                        WHERE deleted = false
+                        GROUP BY user_id
+                    ) c ON p.id = c.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS bookmark_count
+                        FROM user_bookmarks
+                        GROUP BY user_id
+                    ) b ON p.id = b.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS upload_count
+                        FROM uploads
+                        GROUP BY user_id
+                    ) up ON p.id = up.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS list_count
+                        FROM user_manga_lists
+                        GROUP BY user_id
+                    ) l ON p.id = l.user_id
+                    WHERE p.id = @id";
+
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("id", userId);
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    if (!await reader.ReadAsync())
+                    {
+                        await _postgresService.CloseAsync();
+                        return NotFound(ErrorResponse.Create("User not found", status: 404));
+                    }
+
+                    var profileDetails = new UserProfileDetailsResponse
+                    {
+                        UserId = userId,
+                        Username = reader.GetString(0),
+                        DisplayName = reader.GetString(1),
+                        CreatedAt = reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
+                        TotalComments = reader.GetInt64(3),
+                        TotalUpvotes = reader.GetInt64(4),
+                        TotalDownvotes = reader.GetInt64(5),
+                        TotalBookmarks = reader.GetInt64(6),
+                        TotalUploads = reader.GetInt64(7),
+                        TotalLists = reader.GetInt64(8)
+                    };
+
+                    await _postgresService.CloseAsync();
+                    return Ok(SuccessResponse<UserProfileDetailsResponse>.Create(profileDetails));
+                }
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve user profile", ex.Message));
+            }
+        }
     }
 }
