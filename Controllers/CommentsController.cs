@@ -662,13 +662,36 @@ namespace AkariApi.Controllers
                 if (ownerId != userId)
                     return StatusCode(403, ErrorResponse.Create("Forbidden", "You can only delete your own comments"));
 
-                // Soft delete
-                var updateQuery = "UPDATE comments SET deleted = true, content = '[deleted]', updated_at = @updated_at WHERE id = @comment_id";
-                using (var cmd = new NpgsqlCommand(updateQuery, _postgresService.Connection))
+                // Check if comment has replies
+                var replyCountQuery = "SELECT COUNT(*) FROM comments WHERE parent_id = @comment_id";
+                long replyCount;
+                using (var cmd = new NpgsqlCommand(replyCountQuery, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("@comment_id", commentId);
-                    cmd.Parameters.AddWithValue("@updated_at", DateTimeOffset.UtcNow);
-                    await cmd.ExecuteNonQueryAsync();
+                    var result = await cmd.ExecuteScalarAsync();
+                    replyCount = result != null ? (long)result : 0;
+                }
+
+                if (replyCount > 0)
+                {
+                    // Soft delete
+                    var updateQuery = "UPDATE comments SET deleted = true, content = '[deleted]', updated_at = @updated_at WHERE id = @comment_id";
+                    using (var cmd = new NpgsqlCommand(updateQuery, _postgresService.Connection))
+                    {
+                        cmd.Parameters.AddWithValue("@comment_id", commentId);
+                        cmd.Parameters.AddWithValue("@updated_at", DateTimeOffset.UtcNow);
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+                }
+                else
+                {
+                    // Hard delete
+                    var deleteQuery = "DELETE FROM comments WHERE id = @comment_id";
+                    using (var cmd = new NpgsqlCommand(deleteQuery, _postgresService.Connection))
+                    {
+                        cmd.Parameters.AddWithValue("@comment_id", commentId);
+                        await cmd.ExecuteNonQueryAsync();
+                    }
                 }
 
                 return Ok(SuccessResponse<string>.Create("Comment deleted successfully"));
