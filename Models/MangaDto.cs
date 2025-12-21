@@ -196,8 +196,6 @@ namespace AkariApi.Models
 
     public class MangaIdsResponse : PaginatedResponse<Guid>
     {
-        [JsonPropertyName("ids")]
-        public new List<Guid> Items { get; set; } = new List<Guid>();
     }
 
     public class MangaChapterIdsPair
