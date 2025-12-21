@@ -125,7 +125,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetAuthorsList([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 500)] int pageSize = 100)
         {
-            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize, 500, 100);
             var offset = (clampedPage - 1) * clampedPageSize;
 
             try
