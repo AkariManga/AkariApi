@@ -577,6 +577,88 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Get user's rating for a manga
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <returns>The user's rating for the manga.</returns>
+        [HttpGet("{id}/rating")]
+        [RequireTokenRefresh]
+        [ProducesResponseType(typeof(SuccessResponse<int?>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetMangaRating(Guid id)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var query = "SELECT rating FROM manga_ratings WHERE user_id = @userId AND manga_id = @mangaId";
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    cmd.Parameters.AddWithValue("mangaId", id);
+                    var result = await cmd.ExecuteScalarAsync();
+                    await _postgresService.CloseAsync();
+
+                    int? rating = result != null ? (int?)Convert.ToInt32(result) : null;
+                    return Ok(SuccessResponse<int?>.Create(rating));
+                }
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to get rating", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Remove user's rating for a manga
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <returns>A success message.</returns>
+        [HttpDelete("{id}/rate")]
+        [RequireTokenRefresh]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> DeleteMangaRating(Guid id)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var query = "DELETE FROM manga_ratings WHERE user_id = @userId AND manga_id = @mangaId";
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    cmd.Parameters.AddWithValue("mangaId", id);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<string>.Create("Rating removed successfully"));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to remove rating", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Get manga by MAL ID
         /// </summary>
         /// <param name="id">The MyAnimeList ID of the manga.</param>
