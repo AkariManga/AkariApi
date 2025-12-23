@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace AkariApi.Models
@@ -38,7 +39,9 @@ namespace AkariApi.Models
 
     public class MalMangaListItem
     {
+        [Required]
         public required MalMangaNode Node { get; set; }
+        [Required]
         public MalListStatus ListStatus { get; set; } = new MalListStatus
         {
             Status = string.Empty,
@@ -52,9 +55,13 @@ namespace AkariApi.Models
 
     public class MalMangaNode
     {
+        [Required]
         public required int Id { get; set; }
+        [Required]
         public required string Title { get; set; }
+        [Required]
         public MalMainPicture? MainPicture { get; set; }
+        [Required]
         public required string MediaType { get; set; }
     }
 
@@ -66,11 +73,17 @@ namespace AkariApi.Models
 
     public class MalListStatus
     {
+        [Required]
         public string Status { get; set; } = string.Empty;
+        [Required]
         public bool IsRereading { get; set; } = false;
+        [Required]
         public int NumVolumesRead { get; set; } = 0;
+        [Required]
         public int NumChaptersRead { get; set; } = 0;
+        [Required]
         public int Score { get; set; } = 0;
+        [Required]
         public string UpdatedAt { get; set; } = string.Empty;
     }
 
