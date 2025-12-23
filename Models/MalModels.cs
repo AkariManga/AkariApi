@@ -55,6 +55,7 @@ namespace AkariApi.Models
         public required int Id { get; set; }
         public required string Title { get; set; }
         public MalMainPicture? MainPicture { get; set; }
+        public required string MediaType { get; set; }
     }
 
     public class MalMainPicture

@@ -185,7 +185,7 @@ namespace AkariApi.Controllers
             queryParams.Add($"limit={limit}");
             queryParams.Add($"offset={offset}");
             queryParams.Add("sort=list_score");
-            queryParams.Add("fields=list_status");
+            queryParams.Add("fields=list_status,media_type");
 
             var queryString = string.Join("&", queryParams);
             var url = $"https://api.myanimelist.net/v2/users/@me/mangalist?{queryString}";
