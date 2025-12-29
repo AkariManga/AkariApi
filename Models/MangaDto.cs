@@ -194,6 +194,14 @@ namespace AkariApi.Models
         public List<int> MalIds { get; set; } = new List<int>();
     }
 
+    public class BatchGetAniMangaRequest
+    {
+        [Required]
+        [MinLength(1)]
+        [MaxLength(50)]
+        public List<int> AniIds { get; set; } = new List<int>();
+    }
+
     public class MangaIdsResponse : PaginatedResponse<Guid>
     {
     }

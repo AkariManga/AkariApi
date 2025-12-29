@@ -40,6 +40,12 @@ builder.Services.AddSwaggerGen(options =>
         In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
         Name = "mal_access_token",
     });
+    options.AddSecurityDefinition("AniCookieAuth", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        In = Microsoft.OpenApi.Models.ParameterLocation.Cookie,
+        Name = "ani_access_token",
+    });
     options.OperationFilter<AuthorizeCheckOperationFilter>();
     options.OperationFilter<MalAuthorizeCheckOperationFilter>();
     options.OperationFilter<RemoveExtraContentTypesOperationFilter>();

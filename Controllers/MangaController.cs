@@ -857,6 +857,204 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Get manga by AniList ID
+        /// </summary>
+        /// <param name="id">The AniList ID of the manga.</param>
+        /// <returns>Detailed manga information.</returns>
+        [HttpGet("ani/{id}")]
+        [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaDetailResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetMangaByAniId(int id)
+        {
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                // Get manga
+                var mangaQuery = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE ani_id = @id";
+                MangaWithChaptersDto? manga = null;
+                using (var cmd = new NpgsqlCommand(mangaQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("id", id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            manga = new MangaWithChaptersDto
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(2),
+                                Cover = reader.GetString(3),
+                                Description = reader.GetString(4),
+                                Status = reader.GetString(5),
+                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
+                                Authors = (string[])reader.GetValue(8),
+                                Genres = (string[])reader.GetValue(9),
+                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
+                                Score = reader.GetDecimal(11),
+                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
+                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
+                                CreatedAt = reader.GetDateTime(14),
+                                UpdatedAt = reader.GetDateTime(15),
+                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
+                            };
+                        }
+                    }
+                }
+
+                if (manga == null)
+                    return NotFound(ErrorResponse.Create("Manga not found", status: 404));
+
+                // Get chapters
+                var chaptersQuery = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number";
+                var chapters = new List<ChapterDto>();
+                using (var cmd = new NpgsqlCommand(chaptersQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("mangaId", manga.Id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var pagesValue = reader.GetValue(3);
+                            short pagesCount;
+                            if (pagesValue is short[] pagesArray)
+                            {
+                                pagesCount = (short)pagesArray.Length;
+                            }
+                            else if (pagesValue is short singlePage)
+                            {
+                                pagesCount = singlePage;
+                            }
+                            else
+                            {
+                                pagesCount = 0;
+                            }
+
+                            chapters.Add(new ChapterDto
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(1),
+                                Number = reader.GetFloat(2),
+                                Pages = pagesCount,
+                                UpdatedAt = reader.GetDateTime(4),
+                                CreatedAt = reader.GetDateTime(5)
+                            });
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                var sortedChapters = chapters.OrderBy(c => c.Number).ToList();
+                var responseObj = new MangaDetailResponse
+                {
+                    Id = manga.Id,
+                    Title = manga.Title,
+                    Cover = manga.Cover,
+                    Description = manga.Description,
+                    Status = manga.Status,
+                    Type = manga.Type,
+                    Authors = manga.Authors,
+                    Genres = manga.Genres,
+                    Views = manga.Views,
+                    Score = manga.Score,
+                    AlternativeTitles = manga.AlternativeTitles,
+                    MalId = manga.MalId,
+                    AniId = manga.AniId,
+                    CreatedAt = manga.CreatedAt,
+                    UpdatedAt = manga.UpdatedAt,
+                    Chapters = sortedChapters.Select(c => new MangaChapter
+                    {
+                        Id = c.Id,
+                        Title = c.Title,
+                        Number = c.Number,
+                        Pages = c.Pages,
+                        UpdatedAt = c.UpdatedAt,
+                        CreatedAt = c.CreatedAt,
+                    }).ToList()
+                };
+
+                return Ok(SuccessResponse<MangaDetailResponse>.Create(responseObj));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Get manga by AniList IDs
+        /// </summary>
+        /// <param name="request">The request containing the list of AniList IDs.</param>
+        /// <returns>A list of detailed manga information.</returns>
+        [HttpPost("ani/batch")]
+        [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
+        [ProducesResponseType(typeof(SuccessResponse<List<MangaResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> BatchGetMangaByAniIds([FromBody] BatchGetAniMangaRequest request)
+        {
+            if (request.AniIds == null || !request.AniIds.Any())
+            {
+                return BadRequest(ErrorResponse.Create("At least one AniList ID is required"));
+            }
+
+            if (request.AniIds.Count > 50)
+            {
+                return BadRequest(ErrorResponse.Create("Maximum 50 AniList IDs allowed per request"));
+            }
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var query = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE ani_id = ANY(@aniIds)";
+                var mangaList = new List<MangaResponse>();
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("aniIds", request.AniIds);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var manga = new MangaResponse
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(2),
+                                Cover = reader.GetString(3),
+                                Description = reader.GetString(4),
+                                Status = reader.GetString(5),
+                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
+                                Authors = (string[])reader.GetValue(8),
+                                Genres = (string[])reader.GetValue(9),
+                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
+                                Score = reader.GetDecimal(11),
+                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
+                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
+                                CreatedAt = reader.GetDateTime(14),
+                                UpdatedAt = reader.GetDateTime(15),
+                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
+                            };
+                            mangaList.Add(manga);
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<List<MangaResponse>>.Create(mangaList));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Get manga chapter
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
