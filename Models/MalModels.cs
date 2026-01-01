@@ -106,4 +106,17 @@ namespace AkariApi.Models
     {
         public string? Next { get; set; }
     }
+
+    public class MalUser
+    {
+        [Required]
+        public required int Id { get; set; }
+        [Required]
+        public required string Name { get; set; }
+        [Required]
+        public string Location { get; set; } = string.Empty;
+        [JsonPropertyName("joined_at")]
+        [Required]
+        public required string JoinedAt { get; set; }
+    }
 }

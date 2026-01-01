@@ -78,19 +78,6 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
-        /// Logout by clearing tokens
-        /// </summary>
-        /// <returns>Success response</returns>
-        [HttpPost("logout")]
-        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
-        public IActionResult Logout()
-        {
-            Response.Cookies.Delete("mal_access_token");
-            Response.Cookies.Delete("mal_refresh_token");
-            return Ok(SuccessResponse<string>.Create("Logged out"));
-        }
-
-        /// <summary>
         /// Update user's manga list status
         /// </summary>
         /// <param name="request">The update request containing manga_id and num_chapters_read.</param>
@@ -208,6 +195,46 @@ namespace AkariApi.Controllers
             else
             {
                 var errorData = JsonSerializer.Deserialize<ErrorData>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ErrorData { Message = "Failed to get manga list" };
+                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message));
+            }
+        }
+
+        /// <summary>
+        /// Get current user information
+        /// </summary>
+        /// <returns>The current user's information.</returns>
+        [HttpGet("me")]
+        [RequireMalTokenRefresh]
+        [ProducesResponseType(typeof(SuccessResponse<MalUser>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetUser()
+        {
+            var accessToken = Request.Cookies["mal_access_token"];
+
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                return Unauthorized(ErrorResponse.Create("Missing access token"));
+            }
+
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            var response = await httpClient.GetAsync("https://api.myanimelist.net/v2/users/@me");
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (response.IsSuccessStatusCode)
+            {
+                var data = JsonSerializer.Deserialize<MalUser>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (data == null)
+                {
+                    return StatusCode(500, ErrorResponse.Create("Invalid response from MAL"));
+                }
+                return Ok(SuccessResponse<MalUser>.Create(data));
+            }
+            else
+            {
+                var errorData = JsonSerializer.Deserialize<ErrorData>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ErrorData { Message = "Failed to get user" };
                 return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message));
             }
         }
