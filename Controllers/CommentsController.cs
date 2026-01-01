@@ -76,7 +76,7 @@ namespace AkariApi.Controllers
                         c.id, c.target_type, c.target_id, c.user_id, c.parent_id, c.content,
                         c.created_at, c.updated_at, c.edited, c.deleted, c.upvotes, c.downvotes,
                         c.attachment_id,
-                        u.username, u.display_name,
+                        u.username, u.display_name, u.role,
                         up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
                         up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at,
                         COALESCE(reply_counts.reply_count, 0) as reply_count
@@ -113,6 +113,7 @@ namespace AkariApi.Controllers
                                     Id = reader.GetGuid(reader.GetOrdinal("user_id")),
                                     Username = reader.GetString(reader.GetOrdinal("username")),
                                     DisplayName = reader.GetString(reader.GetOrdinal("display_name")),
+                                    Role = reader.GetString(reader.GetOrdinal("role")),
                                 },
                                 ParentId = reader.IsDBNull(reader.GetOrdinal("parent_id")) ? (Guid?)null : reader.GetGuid(reader.GetOrdinal("parent_id")),
                                 Content = reader.GetString(reader.GetOrdinal("content")),
@@ -232,7 +233,7 @@ namespace AkariApi.Controllers
                             c.id, c.target_type, c.target_id, c.user_id, c.parent_id, c.content,
                             c.created_at, c.updated_at, c.edited, c.deleted, c.upvotes, c.downvotes,
                             c.attachment_id,
-                            u.username, u.display_name,
+                            u.username, u.display_name, u.role,
                             up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
                             up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at
                         FROM comments c
@@ -246,7 +247,7 @@ namespace AkariApi.Controllers
                             c.id, c.target_type, c.target_id, c.user_id, c.parent_id, c.content,
                             c.created_at, c.updated_at, c.edited, c.deleted, c.upvotes, c.downvotes,
                             c.attachment_id,
-                            u.username, u.display_name,
+                            u.username, u.display_name, u.role,
                             up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
                             up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at
                         FROM comments c
@@ -275,6 +276,7 @@ namespace AkariApi.Controllers
                                     Id = reader.GetGuid(reader.GetOrdinal("user_id")),
                                     Username = reader.GetString(reader.GetOrdinal("username")),
                                     DisplayName = reader.GetString(reader.GetOrdinal("display_name")),
+                                    Role = reader.GetString(reader.GetOrdinal("role")),
                                 },
                                 ParentId = reader.IsDBNull(reader.GetOrdinal("parent_id")) ? (Guid?)null : reader.GetGuid(reader.GetOrdinal("parent_id")),
                                 Content = reader.GetString(reader.GetOrdinal("content")),
@@ -497,7 +499,7 @@ namespace AkariApi.Controllers
                         c.id, c.target_type, c.target_id, c.user_id, c.parent_id, c.content,
                         c.created_at, c.updated_at, c.edited, c.deleted, c.upvotes, c.downvotes,
                         c.attachment_id,
-                        u.username, u.display_name,
+                        u.username, u.display_name, u.role,
                         up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
                         up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at
                     FROM comments c
@@ -525,6 +527,7 @@ namespace AkariApi.Controllers
                                 Id = reader.GetGuid(reader.GetOrdinal("user_id")),
                                 Username = reader.GetString(reader.GetOrdinal("username")),
                                 DisplayName = reader.GetString(reader.GetOrdinal("display_name")),
+                                Role = reader.GetString(reader.GetOrdinal("role")),
                             },
                             ParentId = reader.IsDBNull(reader.GetOrdinal("parent_id")) ? (Guid?)null : reader.GetGuid(reader.GetOrdinal("parent_id")),
                             Content = reader.GetString(reader.GetOrdinal("content")),

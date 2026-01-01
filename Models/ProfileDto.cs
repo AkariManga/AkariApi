@@ -14,5 +14,8 @@ namespace AkariApi.Models
 
         [Column("display_name")]
         public string DisplayName { get; set; } = string.Empty;
+
+        [Column("role")]
+        public string Role { get; set; } = "user";
     }
 }
