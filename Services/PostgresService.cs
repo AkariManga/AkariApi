@@ -1,14 +1,17 @@
 using Npgsql;
 using System.Data;
+using Microsoft.Extensions.Logging;
 
 namespace AkariApi.Services;
 
 public class PostgresService : IDisposable
 {
     private readonly NpgsqlConnection _connection;
+    private readonly ILogger<PostgresService> _logger;
 
-    public PostgresService(IConfiguration configuration)
+    public PostgresService(IConfiguration configuration, ILogger<PostgresService> logger)
     {
+        _logger = logger;
         var connectionString = configuration["POSTGRES_CONNECTION_STRING"] ?? Environment.GetEnvironmentVariable("POSTGRES_CONNECTION_STRING");
         if (string.IsNullOrEmpty(connectionString))
         {
@@ -21,7 +24,15 @@ public class PostgresService : IDisposable
     {
         if (_connection.State != ConnectionState.Open)
         {
-            await _connection.OpenAsync();
+            try
+            {
+                await _connection.OpenAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to open database connection");
+                throw;
+            }
         }
     }
 
