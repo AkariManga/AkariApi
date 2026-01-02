@@ -1,7 +1,23 @@
 using System.ComponentModel.DataAnnotations;
+using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 
 namespace AkariApi.Models
 {
+    public enum CommentReportReason
+    {
+        [EnumMember(Value = "spam")]
+        spam,
+        [EnumMember(Value = "harassment")]
+        harassment,
+        [EnumMember(Value = "inappropriate")]
+        inappropriate,
+        [EnumMember(Value = "hate-speech")]
+        hate_speech,
+        [EnumMember(Value = "other")]
+        other
+    }
+
     public class UserProfile
     {
         [Required]
@@ -74,6 +90,16 @@ namespace AkariApi.Models
         [Required]
         [Range(-1, 1)]
         public short Value { get; set; }
+    }
+
+    public class ReportCommentRequest
+    {
+        [Required]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public CommentReportReason Reason { get; set; }
+
+        [StringLength(500)]
+        public string? Description { get; set; }
     }
 
     public class CommentVoteResponse

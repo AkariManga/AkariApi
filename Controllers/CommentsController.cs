@@ -436,6 +436,78 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Report a comment
+        /// </summary>
+        /// <param name="commentId">The unique identifier of the comment.</param>
+        /// <param name="request">The report request.</param>
+        /// <returns>A success message.</returns>
+        [HttpPost("{commentId}/report")]
+        [RequireTokenRefresh]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 201)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> ReportComment(Guid commentId, [FromBody] ReportCommentRequest request)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                // Check if comment exists
+                var commentQuery = "SELECT id FROM comments WHERE id = @comment_id";
+                using (var cmd = new NpgsqlCommand(commentQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result == null)
+                        return NotFound(ErrorResponse.Create("Comment not found", status: 404));
+                }
+
+                // Insert the report (UNIQUE constraint will prevent duplicates)
+                var reasonString = request.Reason switch
+                {
+                    CommentReportReason.spam => "spam",
+                    CommentReportReason.harassment => "harassment",
+                    CommentReportReason.inappropriate => "inappropriate",
+                    CommentReportReason.hate_speech => "hate-speech",
+                    CommentReportReason.other => "other",
+                    _ => throw new ArgumentException("Invalid reason")
+                };
+
+                var insertQuery = @"
+                    INSERT INTO comment_reports (comment_id, user_id, reason, description)
+                    VALUES (@comment_id, @user_id, @reason, @description)";
+
+                using (var cmd = new NpgsqlCommand(insertQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@comment_id", commentId);
+                    cmd.Parameters.AddWithValue("@user_id", userId);
+                    cmd.Parameters.AddWithValue("@reason", reasonString);
+                    cmd.Parameters.AddWithValue("@description", (object?)request.Description ?? DBNull.Value);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+
+                return StatusCode(201, SuccessResponse<string>.Create("Comment reported successfully"));
+            }
+            catch (PostgresException ex) when (ex.SqlState == "23505") // Unique violation
+            {
+                return Conflict(ErrorResponse.Create("You have already reported this comment", status: 409));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ErrorResponse.Create("Failed to report comment", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Create a comment on a target
         /// </summary>
         /// <param name="id">The target ID.</param>
