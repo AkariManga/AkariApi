@@ -51,4 +51,13 @@ namespace AkariApi.Models
         [Required]
         public long TotalLists { get; set; }
     }
+
+    public class UpdateProfileRequest
+    {
+        [Required]
+        public string Username { get; set; } = string.Empty;
+
+        [Required]
+        public string DisplayName { get; set; } = string.Empty;
+    }
 }

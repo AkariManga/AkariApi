@@ -211,34 +211,15 @@ namespace AkariApi.Controllers
         [RequireTokenRefresh]
         public async Task<IActionResult> GetMe()
         {
-            var token = AuthenticationHelper.GetAccessToken(Request);
-            if (string.IsNullOrEmpty(token))
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", "Missing or invalid token"));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
             }
 
             try
             {
-                await _supabaseService.InitializeAsync();
                 await _postgresService.OpenAsync();
-                var user = await _supabaseService.Client.Auth.GetUser(token);
-                if (user == null)
-                {
-                    await _postgresService.CloseAsync();
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", "Invalid token"));
-                }
-
-                if (string.IsNullOrEmpty(user.Id))
-                {
-                    await _postgresService.CloseAsync();
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", "User ID not found"));
-                }
-
-                if (!Guid.TryParse(user.Id, out var userId))
-                {
-                    await _postgresService.CloseAsync();
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", "Invalid user ID format"));
-                }
 
                 // Fetch user profile from profiles table
                 using var cmd = new NpgsqlCommand("SELECT username, display_name, role FROM profiles WHERE id = @id", _postgresService.Connection);
@@ -286,9 +267,9 @@ namespace AkariApi.Controllers
 
                 // Fetch all user data in a single query for efficiency
                 var query = @"
-                    SELECT 
-                        p.username, 
-                        p.display_name, 
+                    SELECT
+                        p.username,
+                        p.display_name,
                         p.role,
                         u.created_at,
                         COALESCE(c.comment_count, 0) AS total_comments,
@@ -300,12 +281,12 @@ namespace AkariApi.Controllers
                     FROM profiles p
                     LEFT JOIN auth.users u ON p.id = u.id
                     LEFT JOIN (
-                        SELECT 
-                            user_id, 
+                        SELECT
+                            user_id,
                             COUNT(*) AS comment_count,
                             SUM(upvotes) AS total_upvotes,
                             SUM(downvotes) AS total_downvotes
-                        FROM comments 
+                        FROM comments
                         WHERE deleted = false
                         GROUP BY user_id
                     ) c ON p.id = c.user_id
@@ -359,6 +340,69 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to retrieve user profile", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Update user profile
+        /// </summary>
+        /// <param name="request">The update profile request containing new username and display name.</param>
+        /// <returns>The update response.</returns>
+        [HttpPut("profile")]
+        [RequireTokenRefresh]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
+            }
+
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                // Check if username is a UUID
+                if (Guid.TryParse(request.Username, out _))
+                {
+                    await _postgresService.CloseAsync();
+                    return BadRequest(ErrorResponse.Create("Invalid request", "Username cannot be a UUID"));
+                }
+
+                // Check if username is unique
+                using var checkCmd = new NpgsqlCommand("SELECT COUNT(*) FROM profiles WHERE username = @username AND id != @id", _postgresService.Connection);
+                checkCmd.Parameters.AddWithValue("username", request.Username);
+                checkCmd.Parameters.AddWithValue("id", userId);
+                var count = Convert.ToInt64(await checkCmd.ExecuteScalarAsync());
+                if (count > 0)
+                {
+                    await _postgresService.CloseAsync();
+                    return BadRequest(ErrorResponse.Create("Invalid request", "Username already taken"));
+                }
+
+                // Update profiles table
+                using var updateCmd = new NpgsqlCommand("UPDATE profiles SET username = @username, display_name = @display_name WHERE id = @id", _postgresService.Connection);
+                updateCmd.Parameters.AddWithValue("username", request.Username);
+                updateCmd.Parameters.AddWithValue("display_name", request.DisplayName);
+                updateCmd.Parameters.AddWithValue("id", userId);
+                await updateCmd.ExecuteNonQueryAsync();
+
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<string>.Create("Profile updated successfully"));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to update profile", ex.Message));
             }
         }
     }
