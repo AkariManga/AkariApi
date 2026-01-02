@@ -10,6 +10,8 @@ namespace AkariApi.Models
         public string Username { get; set; } = string.Empty;
         [Required]
         public string DisplayName { get; set; } = string.Empty;
+        [Required]
+        public string Role { get; set; } = "user";
     }
 
     public class BaseCommentResponse

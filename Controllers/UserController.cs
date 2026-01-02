@@ -136,7 +136,7 @@ namespace AkariApi.Controllers
                 }
 
                 // Fetch user profile from profiles table
-                using var cmd = new NpgsqlCommand("SELECT username, display_name FROM profiles WHERE id = @id", _postgresService.Connection);
+                using var cmd = new NpgsqlCommand("SELECT username, display_name, role FROM profiles WHERE id = @id", _postgresService.Connection);
                 cmd.Parameters.AddWithValue("id", userId);
                 using var reader = await cmd.ExecuteReaderAsync();
                 if (!await reader.ReadAsync())
@@ -149,7 +149,8 @@ namespace AkariApi.Controllers
                 {
                     UserId = userId,
                     Username = reader.GetString(0),
-                    DisplayName = reader.GetString(1)
+                    DisplayName = reader.GetString(1),
+                    Role = reader.GetString(2)
                 };
 
                 if (!string.IsNullOrEmpty(session.AccessToken))
@@ -240,7 +241,7 @@ namespace AkariApi.Controllers
                 }
 
                 // Fetch user profile from profiles table
-                using var cmd = new NpgsqlCommand("SELECT username, display_name FROM profiles WHERE id = @id", _postgresService.Connection);
+                using var cmd = new NpgsqlCommand("SELECT username, display_name, role FROM profiles WHERE id = @id", _postgresService.Connection);
                 cmd.Parameters.AddWithValue("id", userId);
                 using var reader = await cmd.ExecuteReaderAsync();
                 if (!await reader.ReadAsync())
@@ -253,7 +254,8 @@ namespace AkariApi.Controllers
                 {
                     UserId = userId,
                     Username = reader.GetString(0),
-                    DisplayName = reader.GetString(1)
+                    DisplayName = reader.GetString(1),
+                    Role = reader.GetString(2)
                 };
 
                 await _postgresService.CloseAsync();
@@ -287,6 +289,7 @@ namespace AkariApi.Controllers
                     SELECT 
                         p.username, 
                         p.display_name, 
+                        p.role,
                         u.created_at,
                         COALESCE(c.comment_count, 0) AS total_comments,
                         COALESCE(c.total_upvotes, 0) AS total_upvotes,
@@ -338,13 +341,14 @@ namespace AkariApi.Controllers
                         UserId = userId,
                         Username = reader.GetString(0),
                         DisplayName = reader.GetString(1),
-                        CreatedAt = reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
-                        TotalComments = reader.GetInt64(3),
-                        TotalUpvotes = reader.GetInt64(4),
-                        TotalDownvotes = reader.GetInt64(5),
-                        TotalBookmarks = reader.GetInt64(6),
-                        TotalUploads = reader.GetInt64(7),
-                        TotalLists = reader.GetInt64(8)
+                        Role = reader.GetString(2),
+                        CreatedAt = reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+                        TotalComments = reader.GetInt64(4),
+                        TotalUpvotes = reader.GetInt64(5),
+                        TotalDownvotes = reader.GetInt64(6),
+                        TotalBookmarks = reader.GetInt64(7),
+                        TotalUploads = reader.GetInt64(8),
+                        TotalLists = reader.GetInt64(9)
                     };
 
                     await _postgresService.CloseAsync();

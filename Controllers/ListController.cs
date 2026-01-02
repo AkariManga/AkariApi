@@ -143,7 +143,7 @@ namespace AkariApi.Controllers
                 }
 
                 // Get the list, check access
-                var listQuery = "SELECT l.id, l.user_id, l.title, l.description, l.is_public, l.created_at, l.updated_at, u.username, u.display_name FROM user_manga_lists l JOIN profiles u ON l.user_id = u.id WHERE l.id = @id";
+                var listQuery = "SELECT l.id, l.user_id, l.title, l.description, l.is_public, l.created_at, l.updated_at, u.username, u.display_name, u.role FROM user_manga_lists l JOIN profiles u ON l.user_id = u.id WHERE l.id = @id";
                 UserMangaListWithEntriesResponse? result = null;
                 using (var listCmd = new NpgsqlCommand(listQuery, _postgresService.Connection))
                 {
@@ -169,7 +169,8 @@ namespace AkariApi.Controllers
                                     {
                                         UserId = listUserId,
                                         Username = reader.GetString(7),
-                                        DisplayName = reader.GetString(8)
+                                        DisplayName = reader.GetString(8),
+                                        Role = reader.GetString(9)
                                     },
                                     Entries = new List<UserMangaListEntryResponse>()
                                 };

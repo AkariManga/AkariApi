@@ -12,6 +12,9 @@ namespace AkariApi.Models
 
         [Required]
         public string DisplayName { get; set; } = string.Empty;
+
+        [Required]
+        public string Role { get; set; } = "user";
     }
 
     public class UserProfileDetailsResponse
@@ -24,6 +27,9 @@ namespace AkariApi.Models
 
         [Required]
         public string DisplayName { get; set; } = string.Empty;
+
+        [Required]
+        public string Role { get; set; } = "user";
 
         public DateTimeOffset? CreatedAt { get; set; }
 
