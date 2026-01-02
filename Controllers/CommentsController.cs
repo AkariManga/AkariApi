@@ -9,6 +9,12 @@ using Npgsql;
 
 namespace AkariApi.Controllers
 {
+    public enum CommentSortOrder
+    {
+        Latest,
+        Upvoted
+    }
+
     [ApiController]
     [Route("v2/comments")]
     [ApiVersion("2.0")]
@@ -31,15 +37,18 @@ namespace AkariApi.Controllers
         /// <param name="id">The comment target ID.</param>
         /// <param name="page">The page number.</param>
         /// <param name="pageSize">The number of items per page.</param>
-        /// <returns>A paginated list of top-level comments for the target.</returns>
+        /// <param name="sort">The sort order: Latest or Upvoted. Defaults to Latest.</param>
+        /// <returns>A paginated list of top-level comments for the target, sorted by the specified order.</returns>
         [HttpGet("{id}")]
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes)]
         [ProducesResponseType(typeof(SuccessResponse<PaginatedCommentResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> GetComments(Guid id, int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
+        public async Task<IActionResult> GetComments(Guid id, int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20, [FromQuery] CommentSortOrder sort = CommentSortOrder.Latest)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
             var offset = (clampedPage - 1) * clampedPageSize;
+
+            var orderBy = sort == CommentSortOrder.Upvoted ? "(c.upvotes - c.downvotes) DESC" : "c.created_at DESC";
 
             try
             {
@@ -71,7 +80,7 @@ namespace AkariApi.Controllers
                 }
 
                 // Get paginated comments with user and attachment info
-                var commentsQuery = @"
+                var commentsQuery = $@"
                     SELECT
                         c.id, c.target_type, c.target_id, c.user_id, c.parent_id, c.content,
                         c.created_at, c.updated_at, c.edited, c.deleted, c.upvotes, c.downvotes,
@@ -89,7 +98,7 @@ namespace AkariApi.Controllers
                         GROUP BY parent_id
                     ) reply_counts ON c.id = reply_counts.parent_id
                     WHERE c.parent_id IS NULL AND c.target_id = @target_id
-                    ORDER BY c.created_at DESC
+                    ORDER BY {orderBy}
                     LIMIT @limit OFFSET @offset";
 
                 var comments = new List<CommentResponse>();
