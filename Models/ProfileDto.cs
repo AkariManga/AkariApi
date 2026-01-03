@@ -17,5 +17,8 @@ namespace AkariApi.Models
 
         [Column("role")]
         public string Role { get; set; } = "user";
+
+        [Column("banned")]
+        public bool Banned { get; set; } = false;
     }
 }

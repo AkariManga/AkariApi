@@ -136,7 +136,7 @@ namespace AkariApi.Controllers
                 }
 
                 // Fetch user profile from profiles table
-                using var cmd = new NpgsqlCommand("SELECT username, display_name, role FROM profiles WHERE id = @id", _postgresService.Connection);
+                using var cmd = new NpgsqlCommand("SELECT username, display_name, role, banned FROM profiles WHERE id = @id", _postgresService.Connection);
                 cmd.Parameters.AddWithValue("id", userId);
                 using var reader = await cmd.ExecuteReaderAsync();
                 if (!await reader.ReadAsync())
@@ -150,7 +150,8 @@ namespace AkariApi.Controllers
                     UserId = userId,
                     Username = reader.GetString(0),
                     DisplayName = reader.GetString(1),
-                    Role = reader.GetString(2)
+                    Role = reader.GetString(2),
+                    Banned = reader.GetBoolean(3)
                 };
 
                 if (!string.IsNullOrEmpty(session.AccessToken))
@@ -222,7 +223,7 @@ namespace AkariApi.Controllers
                 await _postgresService.OpenAsync();
 
                 // Fetch user profile from profiles table
-                using var cmd = new NpgsqlCommand("SELECT username, display_name, role FROM profiles WHERE id = @id", _postgresService.Connection);
+                using var cmd = new NpgsqlCommand("SELECT username, display_name, role, banned FROM profiles WHERE id = @id", _postgresService.Connection);
                 cmd.Parameters.AddWithValue("id", userId);
                 using var reader = await cmd.ExecuteReaderAsync();
                 if (!await reader.ReadAsync())
@@ -236,7 +237,8 @@ namespace AkariApi.Controllers
                     UserId = userId,
                     Username = reader.GetString(0),
                     DisplayName = reader.GetString(1),
-                    Role = reader.GetString(2)
+                    Role = reader.GetString(2),
+                    Banned = reader.GetBoolean(3)
                 };
 
                 await _postgresService.CloseAsync();
@@ -271,6 +273,7 @@ namespace AkariApi.Controllers
                         p.username,
                         p.display_name,
                         p.role,
+                        p.banned,
                         u.created_at,
                         COALESCE(c.comment_count, 0) AS total_comments,
                         COALESCE(c.total_upvotes, 0) AS total_upvotes,
@@ -323,13 +326,14 @@ namespace AkariApi.Controllers
                         Username = reader.GetString(0),
                         DisplayName = reader.GetString(1),
                         Role = reader.GetString(2),
-                        CreatedAt = reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
-                        TotalComments = reader.GetInt64(4),
-                        TotalUpvotes = reader.GetInt64(5),
-                        TotalDownvotes = reader.GetInt64(6),
-                        TotalBookmarks = reader.GetInt64(7),
-                        TotalUploads = reader.GetInt64(8),
-                        TotalLists = reader.GetInt64(9)
+                        Banned = reader.GetBoolean(3),
+                        CreatedAt = reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
+                        TotalComments = reader.GetInt64(5),
+                        TotalUpvotes = reader.GetInt64(6),
+                        TotalDownvotes = reader.GetInt64(7),
+                        TotalBookmarks = reader.GetInt64(8),
+                        TotalUploads = reader.GetInt64(9),
+                        TotalLists = reader.GetInt64(10)
                     };
 
                     await _postgresService.CloseAsync();
