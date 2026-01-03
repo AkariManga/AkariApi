@@ -28,6 +28,8 @@ namespace AkariApi.Models
         public string DisplayName { get; set; } = string.Empty;
         [Required]
         public string Role { get; set; } = "user";
+        [Required]
+        public bool Banned { get; set; } = false;
     }
 
     public class BaseCommentResponse

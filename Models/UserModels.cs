@@ -15,6 +15,9 @@ namespace AkariApi.Models
 
         [Required]
         public string Role { get; set; } = "user";
+
+        [Required]
+        public bool Banned { get; set; } = false;
     }
 
     public class UserProfileDetailsResponse
@@ -30,6 +33,9 @@ namespace AkariApi.Models
 
         [Required]
         public string Role { get; set; } = "user";
+
+        [Required]
+        public bool Banned { get; set; } = false;
 
         public DateTimeOffset? CreatedAt { get; set; }
 
