@@ -174,6 +174,7 @@ namespace AkariApi.Controllers
         [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<List<CommentVoteResponse>>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetUserCommentVotes(Guid id)
         {
@@ -181,6 +182,12 @@ namespace AkariApi.Controllers
             if (!string.IsNullOrEmpty(errorMessage))
             {
                 return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
+            if (isBanned)
+            {
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
             }
 
             try
@@ -347,6 +354,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> VoteComment(Guid commentId, [FromBody] VoteCommentRequest request)
@@ -355,6 +363,12 @@ namespace AkariApi.Controllers
             if (!string.IsNullOrEmpty(errorMessage))
             {
                 return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
+            if (isBanned)
+            {
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
             }
 
             try
@@ -448,6 +462,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<string>), 201)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -457,6 +472,12 @@ namespace AkariApi.Controllers
             if (!string.IsNullOrEmpty(errorMessage))
             {
                 return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
+            if (isBanned)
+            {
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
             }
 
             try
@@ -520,6 +541,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<CommentResponse>), 201)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> CreateComment(Guid id, [FromBody] CreateCommentRequest request)
@@ -528,6 +550,12 @@ namespace AkariApi.Controllers
             if (!string.IsNullOrEmpty(errorMessage))
             {
                 return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
+            if (isBanned)
+            {
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
             }
 
             try
@@ -667,6 +695,12 @@ namespace AkariApi.Controllers
                 return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
             }
 
+            var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
+            if (isBanned)
+            {
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
+            }
+
             try
             {
                 await _postgresService.OpenAsync();
@@ -728,6 +762,12 @@ namespace AkariApi.Controllers
             if (!string.IsNullOrEmpty(errorMessage))
             {
                 return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
+            if (isBanned)
+            {
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
             }
 
             try

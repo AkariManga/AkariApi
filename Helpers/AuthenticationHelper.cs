@@ -1,4 +1,5 @@
 using AkariApi.Services;
+using Npgsql;
 
 namespace AkariApi.Helpers
 {
@@ -48,6 +49,33 @@ namespace AkariApi.Helpers
             }
 
             return (userId, string.Empty);
+        }
+
+        public static async Task<bool> IsUserBannedAsync(Guid userId, PostgresService postgresService)
+        {
+            const string query = "SELECT banned FROM public.profiles WHERE id = @userId";
+
+            try
+            {
+                using (var cmd = new NpgsqlCommand(query, postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("@userId", userId);
+
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result != null)
+                    {
+                        return (bool)result;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }
