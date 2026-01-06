@@ -420,6 +420,89 @@ namespace AkariApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Get recommended manga for a manga
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <param name="limit">The maximum number of recommendations to return.</param>
+        /// <returns>A list of recommended manga.</returns>
+        [HttpGet("{id}/recommendations")]
+        [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
+        [ProducesResponseType(typeof(SuccessResponse<List<MangaResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetMangaRecommendations(Guid id, [FromQuery, Range(1, 100)] int limit = 20)
+        {
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                // Check if manga exists
+                var existsQuery = "SELECT 1 FROM manga WHERE id = @id LIMIT 1";
+                using (var cmd = new NpgsqlCommand(existsQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("id", id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (!await reader.ReadAsync())
+                        {
+                            await _postgresService.CloseAsync();
+                            return NotFound(ErrorResponse.Create("Manga not found"));
+                        }
+                    }
+                }
+
+                var query = @"
+                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.score, m.alternative_titles, m.mal_id, m.ani_id, m.created_at, m.updated_at
+                    FROM manga_similarities ms
+                    JOIN manga m ON ms.similar_manga_id = m.id
+                    WHERE ms.manga_id = @mangaId
+                    ORDER BY ms.hybrid_similarity_score DESC
+                    LIMIT @limit
+                ";
+                var recommendations = new List<MangaResponse>();
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("mangaId", id);
+                    cmd.Parameters.AddWithValue("limit", limit);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var manga = new MangaResponse
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(1),
+                                Cover = reader.GetString(2),
+                                Description = reader.GetString(3),
+                                Status = reader.GetString(4),
+                                Type = Enum.Parse<MangaType>(reader.GetString(5)),
+                                Authors = reader.GetFieldValue<string[]>(6),
+                                Genres = reader.GetFieldValue<string[]>(7),
+                                Views = reader.GetInt32(8),
+                                Score = reader.GetDecimal(9),
+                                AlternativeTitles = reader.IsDBNull(10) ? null : reader.GetFieldValue<string[]>(10),
+                                MalId = reader.IsDBNull(11) ? null : reader.GetInt32(11),
+                                AniId = reader.IsDBNull(12) ? null : reader.GetInt32(12),
+                                CreatedAt = reader.GetFieldValue<DateTimeOffset>(13),
+                                UpdatedAt = reader.GetFieldValue<DateTimeOffset>(14)
+                            };
+                            recommendations.Add(manga);
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<List<MangaResponse>>.Create(recommendations));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("An error occurred while fetching recommendations", ex.Message));
+            }
+        }
+
         private static bool IsLocalOrPrivateIp(System.Net.IPAddress ip)
         {
             if (ip.Equals(System.Net.IPAddress.Loopback))
