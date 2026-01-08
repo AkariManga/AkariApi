@@ -43,7 +43,7 @@ namespace AkariApi.Models
         [Required]
         public required ErrorData Data { get; set; }
 
-        public static ErrorResponse Create(string message, object? details = null, int status = 500)
+        public static ErrorResponse Create(string message, string? details = null, int status = 500)
         {
             return new ErrorResponse
             {
