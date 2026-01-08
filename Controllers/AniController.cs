@@ -3,6 +3,7 @@ using AkariApi.Models;
 using AkariApi.Attributes;
 using System.Text.Json;
 using System.Net.Http.Headers;
+using AkariApi.Helpers;
 
 namespace AkariApi.Controllers
 {
@@ -14,6 +15,7 @@ namespace AkariApi.Controllers
     public class AniController : ControllerBase
     {
         private const string AniListApiUrl = "https://graphql.anilist.co";
+        private const string AniListCookieName = "ani_access_token";
 
         /// <summary>
         /// Get current user info from AniList
@@ -23,9 +25,10 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<AniViewer>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> Me()
+        public async Task<IActionResult> Me([FromQuery] string? access_token = null, [FromQuery] int? expires_in = null)
         {
-            var accessToken = Request.Cookies["ani_access_token"];
+            var accessToken = access_token ?? Request.Cookies[AniListCookieName];
+            var expiresIn = expires_in ?? 0;
 
             if (string.IsNullOrEmpty(accessToken))
             {
@@ -50,6 +53,11 @@ namespace AkariApi.Controllers
 
             if (response.IsSuccessStatusCode)
             {
+                if (expiresIn > 0)
+                {
+                    CookieHelper.SetCookie(Response, AniListCookieName, accessToken, expires: TimeSpan.FromSeconds(expiresIn));
+                }
+
                 var data = JsonSerializer.Deserialize<AniUserResponse>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (data?.Data?.Viewer == null)
                 {
@@ -65,6 +73,18 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Logout by clearing tokens
+        /// </summary>
+        /// <returns>Success response</returns>
+        [HttpPost("logout")]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        public IActionResult Logout()
+        {
+            CookieHelper.DeleteCookie(Response, AniListCookieName);
+            return Ok(SuccessResponse<string>.Create("Logged out"));
+        }
+
+        /// <summary>
         /// Get user's manga list from AniList
         /// </summary>
         /// <param name="userName">The AniList username</param>
@@ -75,7 +95,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetMangaList([FromQuery] string userName)
         {
-            var accessToken = Request.Cookies["ani_access_token"];
+            var accessToken = Request.Cookies[AniListCookieName];
 
             if (string.IsNullOrEmpty(accessToken))
             {
@@ -143,7 +163,7 @@ namespace AkariApi.Controllers
                 return BadRequest(ErrorResponse.Create("Invalid input"));
             }
 
-            var accessToken = Request.Cookies["ani_access_token"];
+            var accessToken = Request.Cookies[AniListCookieName];
 
             if (string.IsNullOrEmpty(accessToken))
             {
