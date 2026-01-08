@@ -20,9 +20,9 @@ namespace AkariApi.Helpers
             {
                 HttpOnly = !isDevelopment,
                 Secure = !isDevelopment,
-                SameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.None,
+                SameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.Strict,
                 Path = path,
-                Domain = GetCookieDomain(request.Host.Host),
+                Domain = request.Host.Host,
                 Expires = expires.HasValue ? DateTimeOffset.UtcNow.Add(expires.Value) : (DateTimeOffset?)null
             };
             response.Cookies.Append(name, value, options);
