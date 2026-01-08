@@ -10,6 +10,13 @@ using System.Collections.Concurrent;
 
 namespace AkariApi.Controllers
 {
+    public enum MangaListSortOrder
+    {
+        latest,
+        popular,
+        newest,
+    }
+
     [ApiController]
     [Route("v2/manga")]
     [ApiVersion("2.0")]
@@ -42,7 +49,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetMangaList(
-            [FromQuery] string sortBy = "latest",
+            [FromQuery] MangaListSortOrder sortBy = MangaListSortOrder.latest,
             [FromQuery] string query = "",
             [FromQuery] string[]? genres = null,
             [FromQuery] string[]? authors = null,
@@ -65,7 +72,7 @@ namespace AkariApi.Controllers
                     cmd.Parameters.AddWithValue("p_genres", genres == null || genres.Length == 0 ? DBNull.Value : genres);
                     cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
                     cmd.Parameters.AddWithValue("p_offset", offset);
-                    cmd.Parameters.AddWithValue("p_sort_by", sortBy);
+                    cmd.Parameters.AddWithValue("p_sort_by", sortBy.ToString());
                     cmd.Parameters.AddWithValue("p_query", string.IsNullOrWhiteSpace(query) ? DBNull.Value : query);
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
