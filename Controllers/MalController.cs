@@ -200,6 +200,19 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Logout by clearing tokens
+        /// </summary>
+        /// <returns>Success response</returns>
+        [HttpPost("logout")]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        public IActionResult Logout()
+        {
+            CookieHelper.DeleteCookie(Response, "mal_access_token");
+            CookieHelper.DeleteCookie(Response, "mal_refresh_token");
+            return Ok(SuccessResponse<string>.Create("Logged out"));
+        }
+
+        /// <summary>
         /// Get current user information
         /// </summary>
         /// <returns>The current user's information.</returns>

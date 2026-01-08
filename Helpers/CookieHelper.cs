@@ -14,18 +14,36 @@ namespace AkariApi.Helpers
         /// <param name="path">The path for the cookie (default "/").</param>
         public static void SetCookie(HttpResponse response, string name, string value, TimeSpan? expires = null, string path = "/")
         {
+            var options = CreateCookieOptions(response, path, expires.HasValue ? DateTimeOffset.UtcNow.Add(expires.Value) : (DateTimeOffset?)null);
+            response.Cookies.Append(name, value, options);
+        }
+
+        /// <summary>
+        /// Deletes a cookie with options that match those used when setting the cookie.
+        /// This ensures the cookie is properly removed across environments.
+        /// </summary>
+        /// <param name="response">The HTTP response to delete the cookie from.</param>
+        /// <param name="name">The name of the cookie to delete.</param>
+        /// <param name="path">The path for the cookie (default "/").</param>
+        public static void DeleteCookie(HttpResponse response, string name, string path = "/")
+        {
+            var options = CreateCookieOptions(response, path, DateTimeOffset.UtcNow.AddDays(-1));
+            response.Cookies.Delete(name, options);
+        }
+
+        private static CookieOptions CreateCookieOptions(HttpResponse response, string path, DateTimeOffset? expires)
+        {
             bool isDevelopment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
             var request = response.HttpContext.Request;
-            var options = new CookieOptions
+            return new CookieOptions
             {
                 HttpOnly = !isDevelopment,
                 Secure = !isDevelopment,
                 SameSite = isDevelopment ? SameSiteMode.Lax : SameSiteMode.None,
                 Path = path,
                 Domain = GetCookieDomain(request.Host.Host),
-                Expires = expires.HasValue ? DateTimeOffset.UtcNow.Add(expires.Value) : (DateTimeOffset?)null
+                Expires = expires
             };
-            response.Cookies.Append(name, value, options);
         }
 
         private static string? GetCookieDomain(string host)
