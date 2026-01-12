@@ -2,10 +2,10 @@ using Microsoft.AspNetCore.Mvc;
 using AkariApi.Models;
 using AkariApi.Services;
 using AkariApi.Attributes;
-using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
 using Npgsql;
+using System.Linq;
 
 namespace AkariApi.Controllers
 {
@@ -18,7 +18,6 @@ namespace AkariApi.Controllers
     {
         private readonly SupabaseService _supabaseService;
         private readonly PostgresService _postgresService;
-        private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 
         public BookmarksController(SupabaseService supabaseService, PostgresService postgresService)
         {
@@ -53,62 +52,190 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                // Get total count
-                long totalCount = 0;
-                using (var countCmd = new NpgsqlCommand("SELECT COUNT(*) FROM user_bookmarks WHERE user_id = @userId", _postgresService.Connection))
-                {
-                    countCmd.Parameters.AddWithValue("userId", userId);
-                    var result = await countCmd.ExecuteScalarAsync();
-                    totalCount = result != null ? (long)result : 0;
-                }
+                var offset = (clampedPage - 1) * clampedPageSize;
 
-                // Get bookmarks using RPC
-                var rpcQuery = "SELECT get_user_bookmarks(@p_user_id, @p_page, @p_limit)";
-                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
+                // Get everything in a single query with LATERAL joins
+                var bookmarksQuery = @"
+                    WITH base_bookmarks AS (
+                        SELECT
+                            ub.id as bookmark_id,
+                            ub.created_at as bookmark_created_at,
+                            ub.updated_at as bookmark_updated_at,
+                            m.id as manga_id,
+                            m.title,
+                            m.cover,
+                            m.description,
+                            m.status,
+                            m.type,
+                            m.authors,
+                            m.genres,
+                            m.view_count,
+                            m.score,
+                            m.mal_id,
+                            m.ani_id,
+                            m.alternative_titles,
+                            m.created_at as manga_created_at,
+                            m.updated_at as manga_updated_at,
+                            ub.last_read_chapter_id,
+                            COUNT(*) OVER() as total_count
+                        FROM user_bookmarks ub
+                        INNER JOIN manga m ON ub.manga_id = m.id
+                        WHERE ub.user_id = @userId
+                    ),
+                    sorted_bookmarks AS (
+                        SELECT
+                            b.*,
+                            COALESCE(
+                                (SELECT COUNT(*)
+                                 FROM chapters c
+                                 WHERE c.manga_id = b.manga_id
+                                 AND c.number > COALESCE((SELECT number FROM chapters WHERE id = b.last_read_chapter_id), 0)),
+                                (SELECT COUNT(*) FROM chapters WHERE manga_id = b.manga_id)
+                            ) as chapters_behind
+                        FROM base_bookmarks b
+                    )
+                    SELECT
+                        sb.*,
+                        lrc.id as lrc_id,
+                        lrc.number as lrc_number,
+                        lrc.title as lrc_title,
+                        lrc.pages as lrc_pages,
+                        lrc.created_at as lrc_created_at,
+                        lrc.updated_at as lrc_updated_at,
+                        latest.id as latest_id,
+                        latest.number as latest_number,
+                        latest.title as latest_title,
+                        latest.pages as latest_pages,
+                        latest.created_at as latest_created_at,
+                        latest.updated_at as latest_updated_at,
+                        next.id as next_id,
+                        next.number as next_number,
+                        next.title as next_title,
+                        next.pages as next_pages,
+                        next.created_at as next_created_at,
+                        next.updated_at as next_updated_at
+                    FROM sorted_bookmarks sb
+                    LEFT JOIN chapters lrc ON lrc.id = sb.last_read_chapter_id
+                    LEFT JOIN LATERAL (
+                        SELECT id, number, title, pages, created_at, updated_at
+                        FROM chapters
+                        WHERE manga_id = sb.manga_id
+                        ORDER BY number DESC, created_at DESC
+                        LIMIT 1
+                    ) latest ON true
+                    LEFT JOIN LATERAL (
+                        SELECT id, number, title, pages, created_at, updated_at
+                        FROM chapters
+                        WHERE manga_id = sb.manga_id
+                        AND (
+                            CASE
+                                WHEN lrc.number IS NULL OR lrc.number = (SELECT MIN(number) FROM chapters WHERE manga_id = sb.manga_id)
+                                THEN number = (SELECT MIN(number) FROM chapters WHERE manga_id = sb.manga_id)
+                                WHEN lrc.number >= (SELECT MAX(number) FROM chapters WHERE manga_id = sb.manga_id)
+                                THEN number = (SELECT MAX(number) FROM chapters WHERE manga_id = sb.manga_id)
+                                ELSE number > lrc.number
+                            END
+                        )
+                        ORDER BY number ASC, created_at ASC
+                        LIMIT 1
+                    ) next ON true
+                    ORDER BY (sb.chapters_behind > 0) DESC, sb.manga_updated_at DESC
+                    LIMIT @limit OFFSET @offset";
+
+                var bookmarks = new List<BookmarkResponse>();
+                long totalCount = 0;
+
+                using (var cmd = new NpgsqlCommand(bookmarksQuery, _postgresService.Connection))
                 {
-                    cmd.Parameters.AddWithValue("p_user_id", userId);
-                    cmd.Parameters.AddWithValue("p_page", clampedPage);
-                    cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                    cmd.Parameters.AddWithValue("offset", offset);
 
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
-                        if (!await reader.ReadAsync())
+                        while (await reader.ReadAsync())
                         {
-                            await _postgresService.CloseAsync();
-                            return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
+                            var bookmarkId = reader.GetGuid(0);
+                            var bookmark = new BookmarkResponse
                             {
-                                Items = new List<BookmarkResponse>(),
-                                TotalItems = (int)totalCount,
-                                CurrentPage = clampedPage,
-                                PageSize = clampedPageSize
-                            }));
+                                BookmarkId = bookmarkId,
+                                BookmarkCreatedAt = reader.GetDateTime(1),
+                                BookmarkUpdatedAt = reader.GetDateTime(2),
+                                MangaId = reader.GetGuid(3),
+                                Title = reader.GetString(4),
+                                Cover = reader.GetString(5),
+                                Description = reader.GetString(6),
+                                Status = reader.GetString(7),
+                                Type = Enum.Parse<MangaType>(reader.GetString(8), true),
+                                Authors = (string[])reader.GetValue(9),
+                                Genres = (string[])reader.GetValue(10),
+                                Views = (int)(long)reader.GetValue(11),
+                                Score = reader.GetDecimal(12),
+                                MalId = reader.IsDBNull(13) ? null : reader.GetInt32(13),
+                                AniId = reader.IsDBNull(14) ? null : reader.GetInt32(14),
+                                AlternativeTitles = (string[])reader.GetValue(15),
+                                MangaCreatedAt = reader.GetDateTime(16),
+                                MangaUpdatedAt = reader.GetDateTime(17)
+                            };
+
+                        totalCount = reader.GetInt64(19);
+                        bookmark.ChaptersBehind = reader.GetInt32(20);
+
+                        // Last read chapter
+                        if (!reader.IsDBNull(21))
+                        {
+                            bookmark.LastReadChapter = new BookmarkChapter
+                            {
+                                Id = reader.GetGuid(21),
+                                Number = reader.GetFloat(22),
+                                Title = reader.IsDBNull(23) ? string.Empty : reader.GetString(23),
+                                Pages = reader.IsDBNull(24) ? (short)0 : reader.GetInt16(24),
+                                CreatedAt = reader.IsDBNull(25) ? DateTimeOffset.MinValue : reader.GetDateTime(25),
+                                UpdatedAt = reader.IsDBNull(26) ? DateTimeOffset.MinValue : reader.GetDateTime(26)
+                            };
                         }
 
-                        var content = reader.GetString(0);
-                        if (string.IsNullOrEmpty(content))
+                        // Latest chapter
+                        if (!reader.IsDBNull(27))
                         {
-                            await _postgresService.CloseAsync();
-                            return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
+                            bookmark.LatestChapter = new BookmarkChapter
                             {
-                                Items = new List<BookmarkResponse>(),
-                                TotalItems = (int)totalCount,
-                                CurrentPage = clampedPage,
-                                PageSize = clampedPageSize
-                            }));
+                                Id = reader.GetGuid(27),
+                                Number = reader.GetFloat(28),
+                                Title = reader.IsDBNull(29) ? string.Empty : reader.GetString(29),
+                                Pages = reader.IsDBNull(30) ? (short)0 : reader.GetInt16(30),
+                                CreatedAt = reader.IsDBNull(31) ? DateTimeOffset.MinValue : reader.GetDateTime(31),
+                                UpdatedAt = reader.IsDBNull(32) ? DateTimeOffset.MinValue : reader.GetDateTime(32)
+                            };
                         }
 
-                        var bookmarks = JsonSerializer.Deserialize<List<BookmarkResponse>>(content, _jsonOptions);
-
-                        await _postgresService.CloseAsync();
-                        return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
+                        // Next chapter
+                        if (!reader.IsDBNull(33))
                         {
-                            Items = bookmarks ?? new List<BookmarkResponse>(),
-                            TotalItems = (int)totalCount,
-                            CurrentPage = clampedPage,
-                            PageSize = clampedPageSize
-                        }));
+                            bookmark.NextChapter = new BookmarkChapter
+                            {
+                                Id = reader.GetGuid(33),
+                                Number = reader.GetFloat(34),
+                                Title = reader.IsDBNull(35) ? string.Empty : reader.GetString(35),
+                                Pages = reader.IsDBNull(36) ? (short)0 : reader.GetInt16(36),
+                                CreatedAt = reader.IsDBNull(37) ? DateTimeOffset.MinValue : reader.GetDateTime(37),
+                                UpdatedAt = reader.IsDBNull(38) ? DateTimeOffset.MinValue : reader.GetDateTime(38)
+                            };
+                        }
+
+                            bookmarks.Add(bookmark);
+                        }
                     }
                 }
+
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<BookmarkListResponse>.Create(new BookmarkListResponse
+                {
+                    Items = bookmarks,
+                    TotalItems = (int)totalCount,
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
+                }));
             }
             catch (Exception ex)
             {
@@ -153,25 +280,7 @@ namespace AkariApi.Controllers
 
                 var offset = (clampedPage - 1) * clampedPageSize;
 
-                // Get total count of matching bookmarks
-                long totalCount = 0;
-                var countQuery = @"
-                    SELECT COUNT(*)
-                    FROM user_bookmarks ub
-                    INNER JOIN manga m ON ub.manga_id = m.id
-                    WHERE ub.user_id = @userId
-                    AND m.search_vector @@ websearch_to_tsquery('english', @query)";
-
-                using (var countCmd = new NpgsqlCommand(countQuery, _postgresService.Connection))
-                {
-                    countCmd.Parameters.AddWithValue("userId", userId);
-                    countCmd.Parameters.AddWithValue("query", query);
-
-                    var result = await countCmd.ExecuteScalarAsync();
-                    totalCount = result != null ? (long)result : 0;
-                }
-
-                // Get matching bookmarks with manga details
+                // Get everything in a single query with LATERAL joins
                 var searchQuery = @"
                     SELECT
                         ub.id as bookmark_id,
@@ -192,18 +301,65 @@ namespace AkariApi.Controllers
                         m.alternative_titles,
                         m.created_at as manga_created_at,
                         m.updated_at as manga_updated_at,
-                        ub.last_read_chapter_id,
-                        ts_rank(m.search_vector, websearch_to_tsquery('english', @query)) as rank
+                        COUNT(*) OVER() as total_count,
+                        COALESCE(
+                            (SELECT COUNT(*)
+                             FROM chapters c
+                             WHERE c.manga_id = m.id
+                             AND c.number > COALESCE((SELECT number FROM chapters WHERE id = ub.last_read_chapter_id), 0)),
+                            (SELECT COUNT(*) FROM chapters WHERE manga_id = m.id)
+                        ) as chapters_behind,
+                        lrc.id as lrc_id,
+                        lrc.number as lrc_number,
+                        lrc.title as lrc_title,
+                        lrc.pages as lrc_pages,
+                        lrc.created_at as lrc_created_at,
+                        lrc.updated_at as lrc_updated_at,
+                        latest.id as latest_id,
+                        latest.number as latest_number,
+                        latest.title as latest_title,
+                        latest.pages as latest_pages,
+                        latest.created_at as latest_created_at,
+                        latest.updated_at as latest_updated_at,
+                        next.id as next_id,
+                        next.number as next_number,
+                        next.title as next_title,
+                        next.pages as next_pages,
+                        next.created_at as next_created_at,
+                        next.updated_at as next_updated_at
                     FROM user_bookmarks ub
                     INNER JOIN manga m ON ub.manga_id = m.id
+                    LEFT JOIN chapters lrc ON lrc.id = ub.last_read_chapter_id
+                    LEFT JOIN LATERAL (
+                        SELECT id, number, title, pages, created_at, updated_at
+                        FROM chapters
+                        WHERE manga_id = m.id
+                        ORDER BY number DESC, created_at DESC
+                        LIMIT 1
+                    ) latest ON true
+                    LEFT JOIN LATERAL (
+                        SELECT id, number, title, pages, created_at, updated_at
+                        FROM chapters
+                        WHERE manga_id = m.id
+                        AND (
+                            CASE
+                                WHEN lrc.number IS NULL OR lrc.number = (SELECT MIN(number) FROM chapters WHERE manga_id = m.id)
+                                THEN number = (SELECT MIN(number) FROM chapters WHERE manga_id = m.id)
+                                WHEN lrc.number >= (SELECT MAX(number) FROM chapters WHERE manga_id = m.id)
+                                THEN number = (SELECT MAX(number) FROM chapters WHERE manga_id = m.id)
+                                ELSE number > lrc.number
+                            END
+                        )
+                        ORDER BY number ASC, created_at ASC
+                        LIMIT 1
+                    ) next ON true
                     WHERE ub.user_id = @userId
                     AND m.search_vector @@ websearch_to_tsquery('english', @query)
-                    ORDER BY rank DESC, ub.updated_at DESC
+                    ORDER BY ts_rank(m.search_vector, websearch_to_tsquery('english', @query)) DESC
                     LIMIT @limit OFFSET @offset";
 
                 var bookmarks = new List<BookmarkResponse>();
-                var bookmarkDict = new Dictionary<Guid, BookmarkResponse>();
-                var lastReadChapterIds = new Dictionary<Guid, Guid?>();
+                long totalCount = 0;
 
                 using (var cmd = new NpgsqlCommand(searchQuery, _postgresService.Connection))
                 {
@@ -236,65 +392,55 @@ namespace AkariApi.Controllers
                                 AniId = reader.IsDBNull(14) ? null : reader.GetInt32(14),
                                 AlternativeTitles = (string[])reader.GetValue(15),
                                 MangaCreatedAt = reader.GetDateTime(16),
-                                MangaUpdatedAt = reader.GetDateTime(17),
-                                LastReadChapter = new BookmarkChapter(),
-                                Chapters = new List<BookmarkChapter>()
+                                MangaUpdatedAt = reader.GetDateTime(17)
                             };
 
-                            lastReadChapterIds[bookmarkId] = reader.IsDBNull(18) ? null : reader.GetGuid(18);
-                            bookmarks.Add(bookmark);
-                            bookmarkDict[bookmark.MangaId] = bookmark;
-                        }
-                    }
-                }
+                            totalCount = reader.GetInt64(18);
+                            bookmark.ChaptersBehind = reader.GetInt32(19);
 
-                if (bookmarks.Count > 0)
-                {
-                    // Fetch all chapters for all manga in a single query
-                    var mangaIds = bookmarks.Select(b => b.MangaId).ToArray();
-                    var allChaptersQuery = @"
-                        SELECT manga_id, id, number, title, pages, created_at, updated_at
-                        FROM chapters
-                        WHERE manga_id = ANY(@mangaIds)
-                        ORDER BY manga_id, number ASC";
-
-                    using (var chaptersCmd = new NpgsqlCommand(allChaptersQuery, _postgresService.Connection))
-                    {
-                        chaptersCmd.Parameters.AddWithValue("mangaIds", mangaIds);
-
-                        using (var chaptersReader = await chaptersCmd.ExecuteReaderAsync())
-                        {
-                            while (await chaptersReader.ReadAsync())
+                            // Last read chapter
+                            if (!reader.IsDBNull(20))
                             {
-                                var mangaId = chaptersReader.GetGuid(0);
-                                var chapter = new BookmarkChapter
+                                bookmark.LastReadChapter = new BookmarkChapter
                                 {
-                                    Id = chaptersReader.GetGuid(1),
-                                    Number = chaptersReader.GetFloat(2),
-                                    Title = chaptersReader.GetString(3),
-                                    Pages = chaptersReader.GetInt16(4),
-                                    CreatedAt = chaptersReader.GetDateTime(5),
-                                    UpdatedAt = chaptersReader.GetDateTime(6)
+                                    Id = reader.GetGuid(20),
+                                    Number = reader.GetFloat(21),
+                                    Title = reader.IsDBNull(22) ? string.Empty : reader.GetString(22),
+                                    Pages = reader.IsDBNull(23) ? (short)0 : reader.GetInt16(23),
+                                    CreatedAt = reader.IsDBNull(24) ? DateTimeOffset.MinValue : reader.GetDateTime(24),
+                                    UpdatedAt = reader.IsDBNull(25) ? DateTimeOffset.MinValue : reader.GetDateTime(25)
                                 };
-
-                                if (bookmarkDict.TryGetValue(mangaId, out var bookmark))
-                                {
-                                    bookmark.Chapters.Add(chapter);
-                                }
                             }
-                        }
-                    }
 
-                    // Set last read chapters
-                    foreach (var bookmark in bookmarks)
-                    {
-                        if (lastReadChapterIds.TryGetValue(bookmark.BookmarkId, out var lastReadId) && lastReadId.HasValue)
-                        {
-                            var lastReadChapter = bookmark.Chapters.FirstOrDefault(c => c.Id == lastReadId.Value);
-                            if (lastReadChapter != null)
+                            // Latest chapter
+                            if (!reader.IsDBNull(26))
                             {
-                                bookmark.LastReadChapter = lastReadChapter;
+                                bookmark.LatestChapter = new BookmarkChapter
+                                {
+                                    Id = reader.GetGuid(26),
+                                    Number = reader.GetFloat(27),
+                                    Title = reader.IsDBNull(28) ? string.Empty : reader.GetString(28),
+                                    Pages = reader.IsDBNull(29) ? (short)0 : reader.GetInt16(29),
+                                    CreatedAt = reader.IsDBNull(30) ? DateTimeOffset.MinValue : reader.GetDateTime(30),
+                                    UpdatedAt = reader.IsDBNull(31) ? DateTimeOffset.MinValue : reader.GetDateTime(31)
+                                };
                             }
+
+                            // Next chapter
+                            if (!reader.IsDBNull(32))
+                            {
+                                bookmark.NextChapter = new BookmarkChapter
+                                {
+                                    Id = reader.GetGuid(32),
+                                    Number = reader.GetFloat(33),
+                                    Title = reader.IsDBNull(34) ? string.Empty : reader.GetString(34),
+                                    Pages = reader.IsDBNull(35) ? (short)0 : reader.GetInt16(35),
+                                    CreatedAt = reader.IsDBNull(36) ? DateTimeOffset.MinValue : reader.GetDateTime(36),
+                                    UpdatedAt = reader.IsDBNull(37) ? DateTimeOffset.MinValue : reader.GetDateTime(37)
+                                };
+                            }
+
+                            bookmarks.Add(bookmark);
                         }
                     }
                 }

@@ -59,6 +59,12 @@ namespace AkariApi.Models
         [Required]
         public BookmarkChapter LastReadChapter { get; set; } = new BookmarkChapter();
         [Required]
+        public BookmarkChapter LatestChapter { get; set; } = new BookmarkChapter();
+        [Required]
+        public BookmarkChapter NextChapter { get; set; } = new BookmarkChapter();
+        [Required]
+        public int ChaptersBehind { get; set; }
+        [JsonIgnore]
         public List<BookmarkChapter> Chapters { get; set; } = new List<BookmarkChapter>();
     }
 
