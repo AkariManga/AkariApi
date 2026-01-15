@@ -8,7 +8,7 @@ namespace AkariApi.Models
     public enum MangaType
     {
         Manga,
-        Manwha,
+        Manhwa,
         Manhua,
         OEL
     }
