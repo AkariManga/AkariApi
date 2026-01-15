@@ -123,7 +123,10 @@ LIMIT @p_limit OFFSET @p_offset";
                     cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
                     cmd.Parameters.AddWithValue("p_offset", offset);
                     cmd.Parameters.AddWithValue("p_sort_by", sortBy.ToString());
-                    cmd.Parameters.AddWithValue("p_query", string.IsNullOrWhiteSpace(query) ? DBNull.Value : (object)query);
+
+                    var queryParam = cmd.Parameters.Add("p_query", NpgsqlDbType.Text);
+                    queryParam.Value = string.IsNullOrWhiteSpace(query) ? DBNull.Value : query;
+
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
                         while (await reader.ReadAsync())
