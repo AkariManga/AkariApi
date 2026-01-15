@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
 using Npgsql;
+using NpgsqlTypes;
 using System.Collections.Concurrent;
 
 namespace AkariApi.Controllers
@@ -15,6 +16,7 @@ namespace AkariApi.Controllers
         latest,
         popular,
         newest,
+        search,
     }
 
     [ApiController]
@@ -64,32 +66,92 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                var rpcQuery = "SELECT json_agg(row_to_json(t)) FROM get_manga(@p_authors, @p_genres, @p_limit, @p_offset, @p_sort_by, @p_query) t";
-                string? content;
-                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
+                var listQuery = @"SELECT
+    m.id,
+    m.orig_id,
+    m.title,
+    m.cover,
+    m.description,
+    m.status,
+    m.type,
+    m.search_vector,
+    m.authors,
+    m.genres,
+    m.mal_id,
+    m.ani_id,
+    m.created_at,
+    m.updated_at,
+    m.alternative_titles,
+    m.score,
+    m.view_count,
+    COUNT(*) OVER() AS total_count
+FROM public.manga m
+WHERE
+    (@p_genres IS NULL OR @p_genres <@ m.genres)
+    AND (@p_authors IS NULL OR m.authors && @p_authors)
+    AND (@p_query IS NULL OR @p_query = '' OR m.search_vector @@ plainto_tsquery('english', @p_query))
+ORDER BY
+    CASE
+        WHEN @p_sort_by = 'popular' THEN m.view_count
+        WHEN @p_sort_by = 'latest' THEN EXTRACT(EPOCH FROM m.updated_at)
+        WHEN @p_sort_by = 'newest' THEN EXTRACT(EPOCH FROM m.created_at)
+        WHEN @p_sort_by = 'search' THEN
+            CASE
+                WHEN @p_query IS NOT NULL AND @p_query != '' THEN
+                    ts_rank(m.search_vector, plainto_tsquery('english', @p_query)) + (m.view_count::float / 100)
+                ELSE m.view_count
+            END
+    END DESC
+LIMIT @p_limit OFFSET @p_offset";
+
+                var mangaList = new List<MangaResponse>();
+                long totalCount = 0;
+                using (var cmd = new NpgsqlCommand(listQuery, _postgresService.Connection))
                 {
-                    cmd.Parameters.AddWithValue("p_authors", authors == null || authors.Length == 0 ? DBNull.Value : authors);
-                    cmd.Parameters.AddWithValue("p_genres", genres == null || genres.Length == 0 ? DBNull.Value : genres);
+                    var authorsParam = cmd.Parameters.Add("p_authors", NpgsqlDbType.Array | NpgsqlDbType.Text);
+                    authorsParam.Value = authors == null || authors.Length == 0 ? DBNull.Value : authors;
+
+                    var genresParam = cmd.Parameters.Add("p_genres", NpgsqlDbType.Array | NpgsqlDbType.Text);
+                    genresParam.Value = genres == null || genres.Length == 0 ? DBNull.Value : genres;
+
                     cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
                     cmd.Parameters.AddWithValue("p_offset", offset);
                     cmd.Parameters.AddWithValue("p_sort_by", sortBy.ToString());
-                    cmd.Parameters.AddWithValue("p_query", string.IsNullOrWhiteSpace(query) ? DBNull.Value : query);
+                    cmd.Parameters.AddWithValue("p_query", string.IsNullOrWhiteSpace(query) ? DBNull.Value : (object)query);
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
-                        if (await reader.ReadAsync())
+                        while (await reader.ReadAsync())
                         {
-                            content = reader.IsDBNull(0) ? "[]" : reader.GetString(0);
-                        }
-                        else
-                        {
-                            content = null;
+                            var manga = new MangaResponse
+                            {
+                                Id = reader.GetGuid(reader.GetOrdinal("id")),
+                                Title = reader.IsDBNull(reader.GetOrdinal("title")) ? "" : reader.GetString(reader.GetOrdinal("title")),
+                                Cover = reader.IsDBNull(reader.GetOrdinal("cover")) ? "" : reader.GetString(reader.GetOrdinal("cover")),
+                                Description = reader.IsDBNull(reader.GetOrdinal("description")) ? "" : reader.GetString(reader.GetOrdinal("description")),
+                                Status = reader.IsDBNull(reader.GetOrdinal("status")) ? "" : reader.GetString(reader.GetOrdinal("status")),
+                                Type = reader.IsDBNull(reader.GetOrdinal("type")) ? MangaType.Manga : Enum.Parse<MangaType>(reader.GetString(reader.GetOrdinal("type"))),
+                                Authors = reader.IsDBNull(reader.GetOrdinal("authors")) ? Array.Empty<string>() : (string[])reader.GetValue(reader.GetOrdinal("authors")),
+                                Genres = reader.IsDBNull(reader.GetOrdinal("genres")) ? Array.Empty<string>() : (string[])reader.GetValue(reader.GetOrdinal("genres")),
+                                Views = reader.IsDBNull(reader.GetOrdinal("view_count")) ? 0 : (int)reader.GetInt64(reader.GetOrdinal("view_count")),
+                                Score = reader.IsDBNull(reader.GetOrdinal("score")) ? 0m : reader.GetDecimal(reader.GetOrdinal("score")),
+                                AlternativeTitles = reader.IsDBNull(reader.GetOrdinal("alternative_titles")) ? null : (string[])reader.GetValue(reader.GetOrdinal("alternative_titles")),
+                                MalId = reader.IsDBNull(reader.GetOrdinal("mal_id")) ? null : (int?)reader.GetInt64(reader.GetOrdinal("mal_id")),
+                                AniId = reader.IsDBNull(reader.GetOrdinal("ani_id")) ? null : (int?)reader.GetInt64(reader.GetOrdinal("ani_id")),
+                                CreatedAt = reader.IsDBNull(reader.GetOrdinal("created_at")) ? DateTimeOffset.UtcNow : new DateTimeOffset(reader.GetDateTime(reader.GetOrdinal("created_at"))),
+                                UpdatedAt = reader.IsDBNull(reader.GetOrdinal("updated_at")) ? DateTimeOffset.UtcNow : new DateTimeOffset(reader.GetDateTime(reader.GetOrdinal("updated_at"))),
+                            };
+                            mangaList.Add(manga);
+                            if (totalCount == 0)
+                            {
+                                totalCount = reader.GetInt64(reader.GetOrdinal("total_count"));
+                            }
                         }
                     }
                 }
 
                 await _postgresService.CloseAsync();
 
-                if (string.IsNullOrEmpty(content))
+                if (totalCount == 0)
                 {
                     return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                     {
@@ -98,49 +160,6 @@ namespace AkariApi.Controllers
                         CurrentPage = clampedPage,
                         PageSize = clampedPageSize
                     }));
-                }
-
-                List<Dictionary<string, JsonElement>>? rpcResults = null;
-                try
-                {
-                    rpcResults = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(content, _jsonOptions);
-                }
-                catch (JsonException)
-                {
-                    return StatusCode(500, ErrorResponse.Create("Failed to parse manga list data", "Invalid JSON response from database"));
-                }
-
-                var mangaList = new List<MangaResponse>();
-                long totalCount = 0;
-
-                foreach (var item in rpcResults ?? new List<Dictionary<string, JsonElement>>())
-                {
-                    if (item.TryGetValue("id", out var idElement) && idElement.ValueKind == JsonValueKind.String && Guid.TryParse(idElement.GetString(), out var id))
-                    {
-                        var manga = new MangaResponse
-                        {
-                            Id = id,
-                            Title = item.TryGetValue("title", out var title) && title.ValueKind == JsonValueKind.String ? title.GetString() ?? "" : "",
-                            Cover = item.TryGetValue("cover", out var cover) && cover.ValueKind == JsonValueKind.String ? cover.GetString() ?? "" : "",
-                            Description = item.TryGetValue("description", out var desc) && desc.ValueKind == JsonValueKind.String ? desc.GetString() ?? "" : "",
-                            Status = item.TryGetValue("status", out var status) && status.ValueKind == JsonValueKind.String ? status.GetString() ?? "" : "",
-                            Type = item.TryGetValue("type", out var type) && type.ValueKind == JsonValueKind.String && Enum.TryParse<MangaType>(type.GetString(), out var mangaType) ? mangaType : MangaType.Manga,
-                            Authors = item.TryGetValue("authors", out var authorsArr) && authorsArr.ValueKind == JsonValueKind.Array ? authorsArr.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : Array.Empty<string>(),
-                            Genres = item.TryGetValue("genres", out var genresArr) && genresArr.ValueKind == JsonValueKind.Array ? genresArr.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : Array.Empty<string>(),
-                            Views = item.TryGetValue("view_count", out var views) && views.ValueKind == JsonValueKind.Number && views.TryGetInt64(out var viewCount) ? (int)viewCount : 0,
-                            Score = item.TryGetValue("score", out var score) && score.ValueKind == JsonValueKind.Number && score.TryGetDecimal(out var scoreVal) ? scoreVal : 0,
-                            AlternativeTitles = item.TryGetValue("alternative_titles", out var altTitles) && altTitles.ValueKind == JsonValueKind.Array ? altTitles.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : null,
-                            MalId = item.TryGetValue("mal_id", out var malId) && malId.ValueKind == JsonValueKind.Number && malId.TryGetInt32(out var malIdVal) ? malIdVal : null,
-                            AniId = item.TryGetValue("ani_id", out var aniId) && aniId.ValueKind == JsonValueKind.Number && aniId.TryGetInt32(out var aniIdVal) ? aniIdVal : null,
-                            CreatedAt = item.TryGetValue("created_at", out var created) && created.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(created.GetString(), out var createdAt) ? createdAt : DateTimeOffset.UtcNow,
-                            UpdatedAt = item.TryGetValue("updated_at", out var updated) && updated.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(updated.GetString(), out var updatedAt) ? updatedAt : DateTimeOffset.UtcNow,
-                        };
-                        mangaList.Add(manga);
-                    }
-                    if (item.TryGetValue("total_count", out var total) && total.ValueKind == JsonValueKind.Number && total.TryGetInt64(out var totalVal))
-                    {
-                        totalCount = totalVal;
-                    }
                 }
 
                 return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
