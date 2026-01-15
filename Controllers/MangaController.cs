@@ -44,6 +44,9 @@ namespace AkariApi.Controllers
         /// <param name="genres">Filter by genres.</param>
         /// <param name="authors">Filter by authors.</param>
         /// <param name="types">Filter by manga types.</param>
+        /// <param name="excludedGenres">Exclude by genres.</param>
+        /// <param name="excludedAuthors">Exclude by authors.</param>
+        /// <param name="excludedTypes">Exclude by manga types.</param>
         /// <param name="page">The page number.</param>
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A list of manga.</returns>
@@ -57,6 +60,9 @@ namespace AkariApi.Controllers
             [FromQuery] string[]? genres = null,
             [FromQuery] string[]? authors = null,
             [FromQuery] string[]? types = null,
+            [FromQuery] string[]? excludedGenres = null,
+            [FromQuery] string[]? excludedAuthors = null,
+            [FromQuery] string[]? excludedTypes = null,
             [FromQuery, Range(1, int.MaxValue)] int page = 1,
             [FromQuery, Range(1, 100)] int pageSize = 20
         )
@@ -91,8 +97,11 @@ FROM public.manga m
 WHERE
     (@p_genres IS NULL OR @p_genres <@ m.genres)
     AND (@p_authors IS NULL OR m.authors && @p_authors)
+    AND (@p_excluded_genres IS NULL OR NOT (m.genres && @p_excluded_genres))
+    AND (@p_excluded_authors IS NULL OR NOT (m.authors && @p_excluded_authors))
     AND (@p_query IS NULL OR @p_query = '' OR m.search_vector @@ plainto_tsquery('english', @p_query))
     AND (@p_type IS NULL OR m.type = ANY(@p_type))
+    AND (@p_excluded_type IS NULL OR m.type <> ALL(@p_excluded_type))
 ORDER BY
     CASE
         WHEN @p_sort_by = 'popular' THEN m.view_count
@@ -119,6 +128,15 @@ LIMIT @p_limit OFFSET @p_offset";
 
                     var typeParam = cmd.Parameters.Add("p_type", NpgsqlDbType.Array | NpgsqlDbType.Text);
                     typeParam.Value = types == null || types.Length == 0 ? DBNull.Value : types;
+
+                    var excludedAuthorsParam = cmd.Parameters.Add("p_excluded_authors", NpgsqlDbType.Array | NpgsqlDbType.Text);
+                    excludedAuthorsParam.Value = excludedAuthors == null || excludedAuthors.Length == 0 ? DBNull.Value : excludedAuthors;
+
+                    var excludedGenresParam = cmd.Parameters.Add("p_excluded_genres", NpgsqlDbType.Array | NpgsqlDbType.Text);
+                    excludedGenresParam.Value = excludedGenres == null || excludedGenres.Length == 0 ? DBNull.Value : excludedGenres;
+
+                    var excludedTypesParam = cmd.Parameters.Add("p_excluded_type", NpgsqlDbType.Array | NpgsqlDbType.Text);
+                    excludedTypesParam.Value = excludedTypes == null || excludedTypes.Length == 0 ? DBNull.Value : excludedTypes;
 
                     cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
                     cmd.Parameters.AddWithValue("p_offset", offset);
