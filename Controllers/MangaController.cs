@@ -43,6 +43,7 @@ namespace AkariApi.Controllers
         /// <param name="query">Search query string.</param>
         /// <param name="genres">Filter by genres.</param>
         /// <param name="authors">Filter by authors.</param>
+        /// <param name="types">Filter by manga types.</param>
         /// <param name="page">The page number.</param>
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A list of manga.</returns>
@@ -55,6 +56,7 @@ namespace AkariApi.Controllers
             [FromQuery] string query = "",
             [FromQuery] string[]? genres = null,
             [FromQuery] string[]? authors = null,
+            [FromQuery] string[]? types = null,
             [FromQuery, Range(1, int.MaxValue)] int page = 1,
             [FromQuery, Range(1, 100)] int pageSize = 20
         )
@@ -90,6 +92,7 @@ WHERE
     (@p_genres IS NULL OR @p_genres <@ m.genres)
     AND (@p_authors IS NULL OR m.authors && @p_authors)
     AND (@p_query IS NULL OR @p_query = '' OR m.search_vector @@ plainto_tsquery('english', @p_query))
+    AND (@p_type IS NULL OR m.type = ANY(@p_type))
 ORDER BY
     CASE
         WHEN @p_sort_by = 'popular' THEN m.view_count
@@ -113,6 +116,9 @@ LIMIT @p_limit OFFSET @p_offset";
 
                     var genresParam = cmd.Parameters.Add("p_genres", NpgsqlDbType.Array | NpgsqlDbType.Text);
                     genresParam.Value = genres == null || genres.Length == 0 ? DBNull.Value : genres;
+
+                    var typeParam = cmd.Parameters.Add("p_type", NpgsqlDbType.Array | NpgsqlDbType.Text);
+                    typeParam.Value = types == null || types.Length == 0 ? DBNull.Value : types;
 
                     cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
                     cmd.Parameters.AddWithValue("p_offset", offset);
