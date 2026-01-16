@@ -1,68 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using Supabase.Postgrest.Attributes;
-using Supabase.Postgrest.Models;
 
 namespace AkariApi.Models
 {
-    [Table("user_manga_lists")]
-    public class UserMangaListDto : BaseModel
-    {
-        [PrimaryKey("id")]
-        [Required]
-        public Guid Id { get; set; } = Guid.NewGuid();
-
-        [Column("user_id")]
-        [Required]
-        public Guid UserId { get; set; }
-
-        [Column("title")]
-        [Required]
-        public string Title { get; set; } = string.Empty;
-
-        [Column("description")]
-        public string? Description { get; set; }
-
-        [Column("is_public")]
-        [Required]
-        public bool IsPublic { get; set; } = false;
-
-        [Column("created_at")]
-        [Required]
-        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-        [Column("updated_at")]
-        [Required]
-        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-    }
-
-    [Table("user_manga_list_entries")]
-    public class UserMangaListEntryDto : BaseModel
-    {
-        [PrimaryKey("id")]
-        [Required]
-        public Guid Id { get; set; } = Guid.NewGuid();
-
-        [Column("list_id")]
-        [Required]
-        public Guid ListId { get; set; }
-
-        [Column("manga_id")]
-        [Required]
-        public Guid MangaId { get; set; }
-
-        [Column("order_index")]
-        [Required]
-        public int OrderIndex { get; set; } = 0;
-
-        [Column("created_at")]
-        [Required]
-        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-        [Column("updated_at")]
-        [Required]
-        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-    }
-
     public class UserMangaListResponse
     {
         [Required]

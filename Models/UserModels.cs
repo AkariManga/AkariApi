@@ -1,33 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using Supabase.Postgrest.Attributes;
-using Supabase.Postgrest.Models;
 
 namespace AkariApi.Models
 {
-    [Table("profiles")]
-    public class ProfileDto : BaseModel
-    {
-        [PrimaryKey("id")]
-        [Required]
-        public Guid Id { get; set; }
-
-        [Column("username")]
-        [Required]
-        public string Username { get; set; } = string.Empty;
-
-        [Column("display_name")]
-        [Required]
-        public string DisplayName { get; set; } = string.Empty;
-
-        [Column("role")]
-        [Required]
-        public string Role { get; set; } = "user";
-
-        [Column("banned")]
-        [Required]
-        public bool Banned { get; set; } = false;
-    }
-
     public class UserResponse
     {
         [Required]

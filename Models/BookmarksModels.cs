@@ -1,64 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
-using Supabase.Postgrest.Attributes;
-using Supabase.Postgrest.Models;
 
 namespace AkariApi.Models
 {
-    [Table("user_bookmarks")]
-    public class UserBookmarkDto : BaseModel
-    {
-        [PrimaryKey("id")]
-        [Required]
-        public Guid Id { get; set; } = Guid.NewGuid();
-
-        [Column("user_id")]
-        [Required]
-        public Guid UserId { get; set; }
-
-        [Column("manga_id")]
-        [Required]
-        public Guid MangaId { get; set; }
-
-        [Column("last_read_chapter_id")]
-        public Guid? LastReadChapterId { get; set; }
-
-        [Column("updated_at")]
-        [Required]
-        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-        [Column("created_at")]
-        [Required]
-        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-    }
-
-    [Table("user_bookmarks_unread")]
-    public class UserBookmarkUnreadDto : BaseModel
-    {
-        [PrimaryKey("id")]
-        [Required]
-        public Guid Id { get; set; } = Guid.NewGuid();
-
-        [Column("user_id")]
-        [Required]
-        public Guid UserId { get; set; }
-
-        [Column("manga_id")]
-        [Required]
-        public Guid MangaId { get; set; }
-
-        [Column("last_read_chapter_id")]
-        public Guid? LastReadChapterId { get; set; }
-
-        [Column("updated_at")]
-        [Required]
-        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-        [Column("created_at")]
-        [Required]
-        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-    }
-
     public class UpdateBookmarkRequest
     {
         [Required]

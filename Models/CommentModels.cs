@@ -1,83 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
-using Supabase.Postgrest.Attributes;
-using Supabase.Postgrest.Models;
 
 namespace AkariApi.Models
 {
-    [Table("comments")]
-    public class CommentDto : BaseModel
-    {
-        [PrimaryKey("id")]
-        [Required]
-        public Guid Id { get; set; } = Guid.NewGuid();
-
-        [Column("target_type")]
-        [Required]
-        public string TargetType { get; set; } = string.Empty;
-
-        [Column("target_id")]
-        [Required]
-        public Guid TargetId { get; set; }
-
-        [Column("user_id")]
-        [Required]
-        public Guid UserId { get; set; }
-
-        [Column("parent_id")]
-        public Guid? ParentId { get; set; }
-
-        [Column("content")]
-        [Required]
-        public string Content { get; set; } = string.Empty;
-
-        [Column("created_at")]
-        [Required]
-        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-        [Column("updated_at")]
-        [Required]
-        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-        [Column("edited")]
-        [Required]
-        public bool Edited { get; set; }
-
-        [Column("deleted")]
-        [Required]
-        public bool Deleted { get; set; }
-
-        [Column("upvotes")]
-        [Required]
-        public int Upvotes { get; set; }
-
-        [Column("downvotes")]
-        [Required]
-        public int Downvotes { get; set; }
-
-        [Column("attachment_id")]
-        public Guid? AttachmentId { get; set; }
-    }
-
-    [Table("comment_votes")]
-    public class CommentVoteDto : BaseModel
-    {
-        [PrimaryKey("comment_id")]
-        [Column("comment_id")]
-        [Required]
-        public Guid CommentId { get; set; }
-
-        [PrimaryKey("user_id")]
-        [Column("user_id")]
-        [Required]
-        public Guid UserId { get; set; }
-
-        [Column("value")]
-        [Required]
-        public short Value { get; set; }
-    }
-
     public enum CommentReportReason
     {
         [EnumMember(Value = "spam")]
@@ -196,11 +122,5 @@ namespace AkariApi.Models
     {
         [Required]
         public List<CommentWithRepliesResponse> Replies { get; set; } = new List<CommentWithRepliesResponse>();
-    }
-
-    public class TopCommentWithRepliesResponse : CommentWithRepliesResponse
-    {
-        [Required]
-        public long ReplyCount { get; set; }
     }
 }
