@@ -528,11 +528,51 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                using (var cmd = new NpgsqlCommand("SELECT batch_update_user_bookmarks(@p_user_id, @p_manga_ids, @p_chapter_numbers)", _postgresService.Connection))
+                // Get the chapter ID - either by number or the first chapter if not specified
+                Guid? chapterId = null;
+                string chapterQuery;
+
+                if (request.ChapterNumber.HasValue)
                 {
-                    cmd.Parameters.AddWithValue("p_user_id", userId);
-                    cmd.Parameters.AddWithValue("p_manga_ids", new Guid[] { mangaId });
-                    cmd.Parameters.AddWithValue("p_chapter_numbers", new double[] { request.ChapterNumber });
+                    // Use epsilon comparison for floating point numbers to handle precision issues
+                    chapterQuery = "SELECT id FROM chapters WHERE manga_id = @mangaId AND ABS(number - @chapterNumber) < 0.0001 LIMIT 1";
+                }
+                else
+                {
+                    chapterQuery = "SELECT id FROM chapters WHERE manga_id = @mangaId ORDER BY number ASC LIMIT 1";
+                }
+
+                using (var cmd = new NpgsqlCommand(chapterQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("mangaId", mangaId);
+                    if (request.ChapterNumber.HasValue)
+                    {
+                        cmd.Parameters.AddWithValue("chapterNumber", request.ChapterNumber.Value);
+                    }
+
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result == null)
+                    {
+                        await _postgresService.CloseAsync();
+                        return BadRequest(ErrorResponse.Create("Bad Request", request.ChapterNumber.HasValue
+                            ? $"Chapter {request.ChapterNumber.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} not found for this manga"
+                            : "No chapters found for this manga"));
+                    }
+                    chapterId = (Guid)result;
+                }
+
+                // Upsert the bookmark
+                var upsertQuery = @"
+                    INSERT INTO user_bookmarks (user_id, manga_id, last_read_chapter_id, updated_at, created_at)
+                    VALUES (@userId, @mangaId, @chapterId, NOW(), NOW())
+                    ON CONFLICT (user_id, manga_id)
+                    DO UPDATE SET last_read_chapter_id = @chapterId, updated_at = NOW()";
+
+                using (var cmd = new NpgsqlCommand(upsertQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    cmd.Parameters.AddWithValue("mangaId", mangaId);
+                    cmd.Parameters.AddWithValue("chapterId", chapterId.Value);
 
                     await cmd.ExecuteNonQueryAsync();
                 }
@@ -543,10 +583,6 @@ namespace AkariApi.Controllers
             catch (Exception ex)
             {
                 await _postgresService.CloseAsync();
-                if (ex.Message.Contains("Chapter not found"))
-                {
-                    return BadRequest(ErrorResponse.Create("Bad Request", ex.Message));
-                }
                 return StatusCode(500, ErrorResponse.Create("Failed to update bookmark", ex.Message));
             }
         }

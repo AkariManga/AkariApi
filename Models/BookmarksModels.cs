@@ -5,8 +5,7 @@ namespace AkariApi.Models
 {
     public class UpdateBookmarkRequest
     {
-        [Required]
-        public required double ChapterNumber { get; set; }
+        public double? ChapterNumber { get; set; }
     }
 
     public class LastReadResponse
