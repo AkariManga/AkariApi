@@ -325,8 +325,8 @@ LIMIT @p_limit OFFSET @p_offset";
                     LEFT JOIN chapters c ON m.id = c.manga_id
                     WHERE m.id = @id
                     GROUP BY m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.score, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles";
-                MangaWithChaptersDto? manga = null;
-                List<ChapterDto> chapters = new();
+                MangaDetailResponse? manga = null;
+                List<MangaChapter> chapters = new();
                 using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("id", id);
@@ -334,7 +334,7 @@ LIMIT @p_limit OFFSET @p_offset";
                     {
                         if (await reader.ReadAsync())
                         {
-                            manga = new MangaWithChaptersDto
+                            manga = new MangaDetailResponse
                             {
                                 Id = reader.GetGuid(0),
                                 Title = reader.GetString(1),
@@ -356,11 +356,11 @@ LIMIT @p_limit OFFSET @p_offset";
                             var chaptersJson = reader.IsDBNull(15) ? "[]" : reader.GetString(15);
                             try
                             {
-                                chapters = JsonSerializer.Deserialize<List<ChapterDto>>(chaptersJson, _jsonOptions) ?? new List<ChapterDto>();
+                                chapters = JsonSerializer.Deserialize<List<MangaChapter>>(chaptersJson, _jsonOptions) ?? new List<MangaChapter>();
                             }
                             catch (JsonException)
                             {
-                                chapters = new List<ChapterDto>();
+                                chapters = new List<MangaChapter>();
                             }
                         }
                     }
@@ -371,36 +371,9 @@ LIMIT @p_limit OFFSET @p_offset";
                 if (manga == null)
                     return NotFound(ErrorResponse.Create("Manga not found", status: 404));
 
-                var sortedChapters = chapters.OrderBy(c => c.Number).ToList();
-                var responseObj = new MangaDetailResponse
-                {
-                    Id = manga.Id,
-                    Title = manga.Title,
-                    Cover = manga.Cover,
-                    Description = manga.Description,
-                    Status = manga.Status,
-                    Type = manga.Type,
-                    Authors = manga.Authors,
-                    Genres = manga.Genres,
-                    Views = manga.Views,
-                    Score = manga.Score,
-                    AlternativeTitles = manga.AlternativeTitles,
-                    MalId = manga.MalId,
-                    AniId = manga.AniId,
-                    CreatedAt = manga.CreatedAt,
-                    UpdatedAt = manga.UpdatedAt,
-                    Chapters = sortedChapters.Select(c => new MangaChapter
-                    {
-                        Id = c.Id,
-                        Title = c.Title,
-                        Number = c.Number,
-                        Pages = c.Pages,
-                        UpdatedAt = c.UpdatedAt,
-                        CreatedAt = c.CreatedAt,
-                    }).ToList()
-                };
+                manga.Chapters = chapters.OrderBy(c => c.Number).ToList();
 
-                return Ok(SuccessResponse<MangaDetailResponse>.Create(responseObj));
+                return Ok(SuccessResponse<MangaDetailResponse>.Create(manga));
             }
             catch (Exception ex)
             {
@@ -812,7 +785,7 @@ LIMIT @p_limit OFFSET @p_offset";
 
                 // Get manga
                 var mangaQuery = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE mal_id = @id";
-                MangaWithChaptersDto? manga = null;
+                MangaDetailResponse? manga = null;
                 using (var cmd = new NpgsqlCommand(mangaQuery, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("id", id);
@@ -820,7 +793,7 @@ LIMIT @p_limit OFFSET @p_offset";
                     {
                         if (await reader.ReadAsync())
                         {
-                            manga = new MangaWithChaptersDto
+                            manga = new MangaDetailResponse
                             {
                                 Id = reader.GetGuid(0),
                                 Title = reader.GetString(2),
@@ -847,7 +820,7 @@ LIMIT @p_limit OFFSET @p_offset";
 
                 // Get chapters
                 var chaptersQuery = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number";
-                var chapters = new List<ChapterDto>();
+                var chapters = new List<MangaChapter>();
                 using (var cmd = new NpgsqlCommand(chaptersQuery, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("mangaId", manga.Id);
@@ -870,7 +843,7 @@ LIMIT @p_limit OFFSET @p_offset";
                                 pagesCount = 0;
                             }
 
-                            chapters.Add(new ChapterDto
+                            chapters.Add(new MangaChapter
                             {
                                 Id = reader.GetGuid(0),
                                 Title = reader.GetString(1),
@@ -885,36 +858,9 @@ LIMIT @p_limit OFFSET @p_offset";
 
                 await _postgresService.CloseAsync();
 
-                var sortedChapters = chapters.OrderBy(c => c.Number).ToList();
-                var responseObj = new MangaDetailResponse
-                {
-                    Id = manga.Id,
-                    Title = manga.Title,
-                    Cover = manga.Cover,
-                    Description = manga.Description,
-                    Status = manga.Status,
-                    Type = manga.Type,
-                    Authors = manga.Authors,
-                    Genres = manga.Genres,
-                    Views = manga.Views,
-                    Score = manga.Score,
-                    AlternativeTitles = manga.AlternativeTitles,
-                    MalId = manga.MalId,
-                    AniId = manga.AniId,
-                    CreatedAt = manga.CreatedAt,
-                    UpdatedAt = manga.UpdatedAt,
-                    Chapters = sortedChapters.Select(c => new MangaChapter
-                    {
-                        Id = c.Id,
-                        Title = c.Title,
-                        Number = c.Number,
-                        Pages = c.Pages,
-                        UpdatedAt = c.UpdatedAt,
-                        CreatedAt = c.CreatedAt,
-                    }).ToList()
-                };
+                manga.Chapters = chapters.OrderBy(c => c.Number).ToList();
 
-                return Ok(SuccessResponse<MangaDetailResponse>.Create(responseObj));
+                return Ok(SuccessResponse<MangaDetailResponse>.Create(manga));
             }
             catch (Exception ex)
             {
@@ -1010,7 +956,7 @@ LIMIT @p_limit OFFSET @p_offset";
 
                 // Get manga
                 var mangaQuery = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE ani_id = @id";
-                MangaWithChaptersDto? manga = null;
+                MangaDetailResponse? manga = null;
                 using (var cmd = new NpgsqlCommand(mangaQuery, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("id", id);
@@ -1018,7 +964,7 @@ LIMIT @p_limit OFFSET @p_offset";
                     {
                         if (await reader.ReadAsync())
                         {
-                            manga = new MangaWithChaptersDto
+                            manga = new MangaDetailResponse
                             {
                                 Id = reader.GetGuid(0),
                                 Title = reader.GetString(2),
@@ -1045,7 +991,7 @@ LIMIT @p_limit OFFSET @p_offset";
 
                 // Get chapters
                 var chaptersQuery = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number";
-                var chapters = new List<ChapterDto>();
+                var chapters = new List<MangaChapter>();
                 using (var cmd = new NpgsqlCommand(chaptersQuery, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("mangaId", manga.Id);
@@ -1068,7 +1014,7 @@ LIMIT @p_limit OFFSET @p_offset";
                                 pagesCount = 0;
                             }
 
-                            chapters.Add(new ChapterDto
+                            chapters.Add(new MangaChapter
                             {
                                 Id = reader.GetGuid(0),
                                 Title = reader.GetString(1),
@@ -1083,36 +1029,9 @@ LIMIT @p_limit OFFSET @p_offset";
 
                 await _postgresService.CloseAsync();
 
-                var sortedChapters = chapters.OrderBy(c => c.Number).ToList();
-                var responseObj = new MangaDetailResponse
-                {
-                    Id = manga.Id,
-                    Title = manga.Title,
-                    Cover = manga.Cover,
-                    Description = manga.Description,
-                    Status = manga.Status,
-                    Type = manga.Type,
-                    Authors = manga.Authors,
-                    Genres = manga.Genres,
-                    Views = manga.Views,
-                    Score = manga.Score,
-                    AlternativeTitles = manga.AlternativeTitles,
-                    MalId = manga.MalId,
-                    AniId = manga.AniId,
-                    CreatedAt = manga.CreatedAt,
-                    UpdatedAt = manga.UpdatedAt,
-                    Chapters = sortedChapters.Select(c => new MangaChapter
-                    {
-                        Id = c.Id,
-                        Title = c.Title,
-                        Number = c.Number,
-                        Pages = c.Pages,
-                        UpdatedAt = c.UpdatedAt,
-                        CreatedAt = c.CreatedAt,
-                    }).ToList()
-                };
+                manga.Chapters = chapters.OrderBy(c => c.Number).ToList();
 
-                return Ok(SuccessResponse<MangaDetailResponse>.Create(responseObj));
+                return Ok(SuccessResponse<MangaDetailResponse>.Create(manga));
             }
             catch (Exception ex)
             {

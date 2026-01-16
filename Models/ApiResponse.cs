@@ -54,16 +54,23 @@ namespace AkariApi.Models
         }
     }
 
+    public class ErrorData
+    {
+        [Required]
+        public required string Message { get; set; }
+        public string? Details { get; set; }
+    }
+
     public class PaginatedResponse<T>
     {
         [Required]
-        public List<T> Items { get; set; } = new List<T>();
+        public required List<T> Items { get; set; } = new List<T>();
         [Required]
-        public int TotalItems { get; set; }
+        public required int TotalItems { get; set; }
         [Required]
-        public int CurrentPage { get; set; }
+        public required int CurrentPage { get; set; }
         [Required]
-        public int PageSize { get; set; }
+        public required int PageSize { get; set; }
         [Required]
         public int TotalPages => (int)Math.Ceiling((double)TotalItems / PageSize);
     }

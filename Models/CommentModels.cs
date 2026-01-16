@@ -69,11 +69,11 @@ namespace AkariApi.Models
     public class CreateCommentRequest
     {
         [Required]
-        public string TargetType { get; set; } = string.Empty;
+        public required string TargetType { get; set; } = string.Empty;
 
         [Required]
         [StringLength(1000, MinimumLength = 1)]
-        public string Content { get; set; } = string.Empty;
+        public required string Content { get; set; } = string.Empty;
 
         public Guid? ParentId { get; set; }
 
@@ -84,21 +84,21 @@ namespace AkariApi.Models
     {
         [Required]
         [StringLength(1000, MinimumLength = 1)]
-        public string Content { get; set; } = string.Empty;
+        public required string Content { get; set; } = string.Empty;
     }
 
     public class VoteCommentRequest
     {
         [Required]
         [Range(-1, 1)]
-        public short Value { get; set; }
+        public required short Value { get; set; }
     }
 
     public class ReportCommentRequest
     {
         [Required]
         [JsonConverter(typeof(JsonStringEnumConverter))]
-        public CommentReportReason Reason { get; set; }
+        public required CommentReportReason Reason { get; set; }
 
         [StringLength(500)]
         public string? Description { get; set; }
@@ -107,11 +107,11 @@ namespace AkariApi.Models
     public class CommentVoteResponse
     {
         [Required]
-        public Guid CommentId { get; set; }
+        public required Guid CommentId { get; set; }
         [Required]
-        public short Value { get; set; }
+        public required short Value { get; set; }
         [Required]
-        public Guid TargetId { get; set; }
+        public required Guid TargetId { get; set; }
     }
 
     public class PaginatedCommentResponse : PaginatedResponse<CommentResponse>
@@ -122,11 +122,5 @@ namespace AkariApi.Models
     {
         [Required]
         public List<CommentWithRepliesResponse> Replies { get; set; } = new List<CommentWithRepliesResponse>();
-    }
-
-    public class TopCommentWithRepliesResponse : CommentWithRepliesResponse
-    {
-        [Required]
-        public long ReplyCount { get; set; }
     }
 }

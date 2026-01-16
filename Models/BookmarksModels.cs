@@ -1,8 +1,52 @@
-using System.Text.Json.Serialization;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace AkariApi.Models
 {
+    public class UpdateBookmarkRequest
+    {
+        [Required]
+        public required double ChapterNumber { get; set; }
+    }
+
+    public class LastReadResponse
+    {
+        [Required]
+        public Guid Id { get; set; }
+
+        [Required]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public MangaType Type { get; set; } = MangaType.Manga;
+
+        [Required]
+        public short Pages { get; set; }
+
+        [Required]
+        public string Title { get; set; } = string.Empty;
+
+        [Required]
+        public float Number { get; set; }
+
+        public DateTimeOffset CreatedAt { get; set; }
+
+        public DateTimeOffset UpdatedAt { get; set; }
+    }
+
+    public class BatchUpdateBookmarksRequest
+    {
+        [Required]
+        public required List<BatchUpdateBookmarkItem> Items { get; set; } = new();
+    }
+
+    public class BatchUpdateBookmarkItem
+    {
+        [Required]
+        public required Guid MangaId { get; set; }
+
+        [Required]
+        public required double ChapterNumber { get; set; }
+    }
+
     public class BookmarkChapter
     {
         [Required]
