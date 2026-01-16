@@ -1,7 +1,33 @@
 using System.ComponentModel.DataAnnotations;
+using Supabase.Postgrest.Attributes;
+using Supabase.Postgrest.Models;
 
 namespace AkariApi.Models
 {
+    [Table("profiles")]
+    public class ProfileDto : BaseModel
+    {
+        [PrimaryKey("id")]
+        [Required]
+        public Guid Id { get; set; }
+
+        [Column("username")]
+        [Required]
+        public string Username { get; set; } = string.Empty;
+
+        [Column("display_name")]
+        [Required]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [Column("role")]
+        [Required]
+        public string Role { get; set; } = "user";
+
+        [Column("banned")]
+        [Required]
+        public bool Banned { get; set; } = false;
+    }
+
     public class UserResponse
     {
         [Required]
@@ -61,9 +87,41 @@ namespace AkariApi.Models
     public class UpdateProfileRequest
     {
         [Required]
-        public string Username { get; set; } = string.Empty;
+        public required string Username { get; set; } = string.Empty;
 
         [Required]
-        public string DisplayName { get; set; } = string.Empty;
+        public required string DisplayName { get; set; } = string.Empty;
+    }
+
+    public class SignUpRequest
+    {
+        [Required]
+        [EmailAddress]
+        public required string Email { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(6)]
+        public required string Password { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(2)]
+        [MaxLength(100)]
+        [RegularExpression(@"^[a-z0-9-]+$", ErrorMessage = "Username must be fully lowercase and contain only dashes, lowercase letters, and numbers.")]
+        public required string UserName { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(2)]
+        [MaxLength(100)]
+        public required string DisplayName { get; set; } = string.Empty;
+    }
+
+    public class SignInRequest
+    {
+        [Required]
+        [EmailAddress]
+        public required string Email { get; set; } = string.Empty;
+
+        [Required]
+        public required string Password { get; set; } = string.Empty;
     }
 }

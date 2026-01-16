@@ -13,44 +13,140 @@ namespace AkariApi.Models
         OEL
     }
 
+    [Table("chapters")]
+    public class ChapterDto : BaseModel
+    {
+        [PrimaryKey("id")]
+        [Required]
+        public Guid Id { get; set; }
+
+        [Column("manga_id")]
+        [Required]
+        public Guid MangaId { get; set; }
+
+        [Column("number")]
+        [Required]
+        public float Number { get; set; }
+
+        [Column("title")]
+        [Required]
+        public string Title { get; set; } = string.Empty;
+
+        [Column("pages")]
+        [Required]
+        public short Pages { get; set; }
+
+        [Column("images")]
+        [Required]
+        public string[] Images { get; set; } = Array.Empty<string>();
+
+        [Column("created_at")]
+        [Required]
+        public DateTimeOffset CreatedAt { get; set; }
+
+        [Column("updated_at")]
+        [Required]
+        public DateTimeOffset UpdatedAt { get; set; }
+    }
+
+    public class ChapterOption
+    {
+        [Required]
+        public required string Label { get; set; } = string.Empty;
+
+        [Required]
+        public required string Value { get; set; } = string.Empty;
+    }
+
+    public class ChapterResponse
+    {
+        [Required]
+        public required Guid Id { get; set; }
+
+        [Required]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public required MangaType Type { get; set; } = MangaType.Manga;
+
+        [Required]
+        public required short Pages { get; set; }
+
+        [Required]
+        public required string Title { get; set; } = string.Empty;
+
+        [Required]
+        public required string[] Images { get; set; } = Array.Empty<string>();
+
+        [Required]
+        public required float Number { get; set; }
+
+        [Required]
+        public required List<ChapterOption> Chapters { get; set; } = new List<ChapterOption>();
+
+        [Required]
+        public required Guid MangaId { get; set; }
+
+        [Required]
+        public required string MangaTitle { get; set; } = string.Empty;
+
+        public float? LastChapter { get; set; }
+
+        public float? NextChapter { get; set; }
+
+        public int? MalId { get; set; }
+
+        public int? AniId { get; set; }
+    }
+
     [Table("manga")]
     public class MangaDto : BaseModel
     {
         [PrimaryKey("id")]
+        [Required]
         public Guid Id { get; set; } = Guid.NewGuid();
 
         [Column("orig_id")]
+        [Required]
         public string OrigId { get; set; } = string.Empty;
 
         [Column("title")]
+        [Required]
         public string Title { get; set; } = string.Empty;
 
         [Column("cover")]
+        [Required]
         public string Cover { get; set; } = string.Empty;
 
         [Column("description")]
+        [Required]
         public string Description { get; set; } = string.Empty;
 
         [Column("status")]
+        [Required]
         public string Status { get; set; } = string.Empty;
 
         [Column("type")]
         [JsonConverter(typeof(JsonStringEnumConverter))]
+        [Required]
         public MangaType Type { get; set; } = MangaType.Manga;
 
         [Column("search_vector")]
+        [Required]
         public string SearchVector { get; set; } = string.Empty;
 
         [Column("authors")]
+        [Required]
         public string[] Authors { get; set; } = Array.Empty<string>();
 
         [Column("genres")]
+        [Required]
         public string[] Genres { get; set; } = Array.Empty<string>();
 
         [Column("view_count")]
+        [Required]
         public int Views { get; set; }
 
         [Column("score")]
+        [Required]
         public decimal Score { get; set; }
 
         [Column("mal_id")]
@@ -60,9 +156,11 @@ namespace AkariApi.Models
         public int? AniId { get; set; }
 
         [Column("created_at")]
+        [Required]
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
         [Column("updated_at")]
+        [Required]
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
         [Column("alternative_titles")]
@@ -72,6 +170,7 @@ namespace AkariApi.Models
     [Table("manga")]
     public class MangaWithChaptersDto : MangaDto
     {
+        [Required]
         public List<ChapterDto> Chapters { get; set; } = new List<ChapterDto>();
     }
 
@@ -154,28 +253,71 @@ namespace AkariApi.Models
 
     public class MangaSearchResponse : MangaResponse
     {
+        [Required]
         public double Rank { get; set; }
+    }
+
+    public class PopularMangaResponse
+    {
+        [Required]
+        public required Guid Id { get; set; }
+        [Required]
+        public required string OrigId { get; set; }
+        [Required]
+        public required string Title { get; set; }
+        [Required]
+        public required string Cover { get; set; }
+        [Required]
+        public required string Description { get; set; }
+        [Required]
+        public required string Status { get; set; }
+        [Required]
+        public required string Type { get; set; }
+        [Required]
+        public required string[] Authors { get; set; }
+        [Required]
+        public required string[] Genres { get; set; }
+        [Required]
+        public required decimal Score { get; set; }
+        public int? MalId { get; set; }
+        public int? AniId { get; set; }
+        [Required]
+        public required DateTimeOffset CreatedAt { get; set; }
+        [Required]
+        public required DateTimeOffset UpdatedAt { get; set; }
+        [Required]
+        public required string[] AlternativeTitles { get; set; }
+        [Required]
+        public required long ViewCount { get; set; }
+        [Required]
+        public required long TotalCount { get; set; }
     }
 
     [Table("manga_ratings")]
     public class MangaRatingDto : BaseModel
     {
         [PrimaryKey("id")]
+        [Required]
         public Guid Id { get; set; } = Guid.NewGuid();
 
         [Column("user_id")]
+        [Required]
         public Guid UserId { get; set; }
 
         [Column("manga_id")]
+        [Required]
         public Guid MangaId { get; set; }
 
         [Column("rating")]
+        [Required]
         public int Rating { get; set; }
 
         [Column("created_at")]
+        [Required]
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
         [Column("updated_at")]
+        [Required]
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
@@ -183,7 +325,7 @@ namespace AkariApi.Models
     {
         [Required]
         [Range(1, 10)]
-        public int Rating { get; set; }
+        public required int Rating { get; set; }
     }
 
     public class BatchGetMangaRequest
@@ -191,7 +333,7 @@ namespace AkariApi.Models
         [Required]
         [MinLength(1)]
         [MaxLength(50)]
-        public List<int> MalIds { get; set; } = new List<int>();
+        public required List<int> MalIds { get; set; } = new List<int>();
     }
 
     public class BatchGetAniMangaRequest
@@ -199,7 +341,7 @@ namespace AkariApi.Models
         [Required]
         [MinLength(1)]
         [MaxLength(50)]
-        public List<int> AniIds { get; set; } = new List<int>();
+        public required List<int> AniIds { get; set; } = new List<int>();
     }
 
     public class MangaIdsResponse : PaginatedResponse<Guid>
@@ -210,11 +352,11 @@ namespace AkariApi.Models
     {
         [Required]
         [JsonPropertyName("mangaId")]
-        public Guid MangaId { get; set; }
+        public required Guid MangaId { get; set; }
 
         [Required]
         [JsonPropertyName("chapterIds")]
-        public List<float> ChapterIds { get; set; } = new List<float>();
+        public required List<float> ChapterIds { get; set; } = new List<float>();
     }
 
     public class MangaChapterIdsResponse : PaginatedResponse<MangaChapterIdsPair>
@@ -224,10 +366,10 @@ namespace AkariApi.Models
     public class AuthorResponse
     {
         [Required]
-        public string Name { get; set; } = string.Empty;
+        public required string Name { get; set; } = string.Empty;
 
         [Required]
-        public int MangaCount { get; set; }
+        public required int MangaCount { get; set; }
     }
 
     public class AuthorListResponse : PaginatedResponse<AuthorResponse>
