@@ -72,7 +72,7 @@ namespace AkariApi.Models
 
     public class AniTitle
     {
-        public required string? English { get; set; }
+        public string? English { get; set; }
     }
 
     public class AniUpdateMangaListRequest
