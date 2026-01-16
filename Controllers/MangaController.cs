@@ -306,13 +306,77 @@ LIMIT @p_limit OFFSET @p_offset";
         /// Get manga by ID
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
-        /// <returns>Detailed manga information.</returns>
+        /// <returns>Basic manga information.</returns>
         [HttpGet("{id}")]
+        [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetMangaById(Guid id)
+        {
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var query = @"
+                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.score, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles
+                    FROM manga m
+                    WHERE m.id = @id";
+                MangaResponse? manga = null;
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("id", id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            manga = new MangaResponse
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(1),
+                                Cover = reader.GetString(2),
+                                Description = reader.GetString(3),
+                                Status = reader.GetString(4),
+                                Type = Enum.Parse<MangaType>(reader.GetString(5)),
+                                Authors = (string[])reader.GetValue(6),
+                                Genres = (string[])reader.GetValue(7),
+                                Views = reader.GetInt64(8) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(8),
+                                Score = reader.GetDecimal(9),
+                                MalId = reader.IsDBNull(10) ? null : (reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(10)),
+                                AniId = reader.IsDBNull(11) ? null : (reader.GetInt64(11) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(11)),
+                                CreatedAt = reader.GetDateTime(12),
+                                UpdatedAt = reader.GetDateTime(13),
+                                AlternativeTitles = reader.IsDBNull(14) ? null : (string[])reader.GetValue(14)
+                            };
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                if (manga == null)
+                    return NotFound(ErrorResponse.Create("Manga not found", status: 404));
+
+                return Ok(SuccessResponse<MangaResponse>.Create(manga));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve manga", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Get detailed manga information by ID
+        /// </summary>
+        /// <param name="id">The unique identifier of the manga.</param>
+        /// <returns>Detailed manga information with chapters.</returns>
+        [HttpGet("{id}/details")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
         [ProducesResponseType(typeof(SuccessResponse<MangaDetailResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> GetMangaById(Guid id)
+        public async Task<IActionResult> GetMangaDetailsById(Guid id)
         {
             try
             {
