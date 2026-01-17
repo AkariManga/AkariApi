@@ -171,6 +171,7 @@ namespace AkariApi.Controllers
             }
             queryParams.Add($"limit={limit}");
             queryParams.Add($"offset={offset}");
+            queryParams.Add("nsfw=1");
             queryParams.Add("sort=list_score");
             queryParams.Add("fields=list_status,media_type");
 
