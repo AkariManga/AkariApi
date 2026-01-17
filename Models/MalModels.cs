@@ -85,18 +85,12 @@ namespace AkariApi.Models
 
     public class MalListStatus
     {
-        [Required]
-        public required string Status { get; set; } = string.Empty;
-        [Required]
-        public required bool IsRereading { get; set; } = false;
-        [Required]
-        public required int NumVolumesRead { get; set; } = 0;
-        [Required]
-        public required int NumChaptersRead { get; set; } = 0;
-        [Required]
-        public required int Score { get; set; } = 0;
-        [Required]
-        public required string UpdatedAt { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public bool IsRereading { get; set; } = false;
+        public int NumVolumesRead { get; set; } = 0;
+        public int NumChaptersRead { get; set; } = 0;
+        public int Score { get; set; } = 0;
+        public string UpdatedAt { get; set; } = string.Empty;
     }
 
     public class MalMangaListStatus
