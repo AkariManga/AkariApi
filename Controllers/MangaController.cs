@@ -736,6 +736,98 @@ END;";
         }
 
         /// <summary>
+        /// Get user's recently viewed manga
+        /// </summary>
+        /// <param name="limit">The maximum number of unique manga to return.</param>
+        /// <returns>A list of recently viewed manga.</returns>
+        [HttpGet("viewed")]
+        [RequireTokenRefresh]
+        [ProducesResponseType(typeof(SuccessResponse<List<MangaResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetRecentlyViewedManga([FromQuery, Range(1, 100)] int limit = 20)
+        {
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+            }
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var query = @"
+SELECT
+    m.id,
+    m.title,
+    m.cover,
+    m.description,
+    m.status,
+    m.type,
+    m.authors,
+    m.genres,
+    m.view_count,
+    m.score,
+    m.alternative_titles,
+    m.mal_id,
+    m.ani_id,
+    m.created_at,
+    m.updated_at
+FROM (
+    SELECT DISTINCT ON (manga_id) manga_id, viewed_at
+    FROM public.manga_views
+    WHERE user_id = @p_user_id
+    ORDER BY manga_id, viewed_at DESC
+) mv
+JOIN public.manga m ON m.id = mv.manga_id
+ORDER BY mv.viewed_at DESC
+LIMIT @p_limit;";
+
+                var mangaList = new List<MangaResponse>();
+                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("p_user_id", userId);
+                    cmd.Parameters.AddWithValue("p_limit", limit);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var manga = new MangaResponse
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                                Cover = reader.IsDBNull(2) ? "" : reader.GetString(2),
+                                Description = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                                Status = reader.IsDBNull(4) ? "" : reader.GetString(4),
+                                Type = reader.IsDBNull(5) ? MangaType.Manga : Enum.Parse<MangaType>(reader.GetString(5)),
+                                Authors = reader.IsDBNull(6) ? Array.Empty<string>() : (string[])reader.GetValue(6),
+                                Genres = reader.IsDBNull(7) ? Array.Empty<string>() : (string[])reader.GetValue(7),
+                                Views = reader.IsDBNull(8) ? 0 : (int)reader.GetInt64(8),
+                                Score = reader.IsDBNull(9) ? 0m : reader.GetDecimal(9),
+                                AlternativeTitles = reader.IsDBNull(10) ? null : (string[])reader.GetValue(10),
+                                MalId = reader.IsDBNull(11) ? null : (int?)reader.GetInt64(11),
+                                AniId = reader.IsDBNull(12) ? null : (int?)reader.GetInt64(12),
+                                CreatedAt = reader.IsDBNull(13) ? DateTimeOffset.UtcNow : new DateTimeOffset(reader.GetDateTime(13)),
+                                UpdatedAt = reader.IsDBNull(14) ? DateTimeOffset.UtcNow : new DateTimeOffset(reader.GetDateTime(14)),
+                            };
+                            mangaList.Add(manga);
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<List<MangaResponse>>.Create(mangaList));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve recently viewed manga", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Rate a manga
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
