@@ -623,11 +623,12 @@ LIMIT @p_limit OFFSET @p_offset";
         /// Update manga views
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
+        /// <param name="request">Optional request body for view tracking preferences.</param>
         [HttpPost("{id}/view")]
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> ViewManga(Guid id)
+        public async Task<IActionResult> ViewManga(Guid id, [FromBody] ViewMangaRequest? request = null)
         {
             var clientIp = HttpContext.Request.Headers["CF-Connecting-IP"].FirstOrDefault();
             if (string.IsNullOrEmpty(clientIp) || clientIp == "::1" || clientIp == "127.0.0.1")
@@ -658,6 +659,16 @@ LIMIT @p_limit OFFSET @p_offset";
                 return Ok(SuccessResponse<string>.Create("View ignored (local or private IP)"));
             }
 
+            Guid? userId = null;
+            if (request?.SaveUserId == true)
+            {
+                var (authUserId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (string.IsNullOrEmpty(errorMessage))
+                {
+                    userId = authUserId;
+                }
+            }
+
             // Acquire semaphore for this IP to prevent concurrent requests
             var semaphore = _ipSemaphores.GetOrAdd(clientIp, _ => new SemaphoreSlim(1, 1));
             await semaphore.WaitAsync();
@@ -668,12 +679,31 @@ LIMIT @p_limit OFFSET @p_offset";
                 {
                     await _postgresService.OpenAsync();
 
-                    var rpcQuery = "SELECT increment_manga_view(@p_manga_id, @p_ip)";
+                    var query = @"
+WITH recent AS (
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.manga_views
+        WHERE manga_id = @p_manga_id
+          AND ip = @p_ip
+          AND viewed_at > now() - interval '24 hours'
+    ) AS is_recent
+), ins AS (
+    INSERT INTO public.manga_views (manga_id, ip, user_id)
+    SELECT @p_manga_id, @p_ip, @p_user_id
+    WHERE NOT (SELECT is_recent FROM recent)
+    RETURNING 1
+)
+SELECT CASE
+    WHEN (SELECT is_recent FROM recent) THEN 'ignored_recent_view'
+    ELSE 'view_logged'
+END;";
                     string? content;
-                    using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
+                    using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
                     {
                         cmd.Parameters.AddWithValue("p_manga_id", id);
                         cmd.Parameters.AddWithValue("p_ip", ipAddress);
+                        cmd.Parameters.AddWithValue("p_user_id", userId == null ? DBNull.Value : userId);
                         var result = await cmd.ExecuteScalarAsync();
                         content = result?.ToString();
                     }
