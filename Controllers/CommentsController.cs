@@ -546,6 +546,11 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> CreateComment(Guid id, [FromBody] CreateCommentRequest request)
         {
+            if (CommentHelper.ContainsBannedContent(request.Content))
+            {
+                return BadRequest(ErrorResponse.Create("Comment contains banned content"));
+            }
+
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
@@ -689,6 +694,11 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> UpdateComment(Guid commentId, [FromBody] UpdateCommentRequest request)
         {
+            if (CommentHelper.ContainsBannedContent(request.Content))
+            {
+                return BadRequest(ErrorResponse.Create("Comment contains banned content"));
+            }
+
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {

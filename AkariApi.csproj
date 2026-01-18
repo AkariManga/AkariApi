@@ -21,6 +21,12 @@
     <PackageReference Include="WebPush" Version="1.0.12" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="comment_banned_words.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
   <Target Name="GeneratePublicSuffixList" BeforeTargets="BeforeCompile">
     <Exec Condition="'$(OS)' == 'Windows_NT'" Command="powershell -ExecutionPolicy Bypass -File $(ProjectDir)GeneratePublicSuffixList.ps1" />
     <Exec Condition="'$(OS)' != 'Windows_NT'" Command="bash $(ProjectDir)GeneratePublicSuffixList.sh" />
