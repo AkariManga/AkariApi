@@ -23,8 +23,7 @@ namespace AkariApi.Models
         public long Size { get; set; }
 
         [Column("url")]
-        [Required]
-        public string Url { get; set; } = string.Empty;
+        public string? Url { get; set; }
 
         [Column("usage_count")]
         [Required]
@@ -41,6 +40,10 @@ namespace AkariApi.Models
         [Column("created_at")]
         [Required]
         public DateTime CreatedAt { get; set; }
+
+        [Column("deleted")]
+        [Required]
+        public bool Deleted { get; set; } = false;
     }
 
     public class UploadResponse
@@ -49,18 +52,18 @@ namespace AkariApi.Models
         public required Guid Id { get; set; }
         [Required]
         public required Guid UserId { get; set; }
-        [Required]
-        public required string Md5Hash { get; set; } = string.Empty;
+        public string? Md5Hash { get; set; }
         [Required]
         public required long Size { get; set; }
-        [Required]
-        public required string Url { get; set; } = string.Empty;
+        public string? Url { get; set; }
         [Required]
         public required int UsageCount { get; set; }
         [Required]
         public required string[] Tags { get; set; } = Array.Empty<string>();
         [Required]
         public required DateTime CreatedAt { get; set; }
+        [Required]
+        public required bool Deleted { get; set; }
     }
 
     public class UploadRequest

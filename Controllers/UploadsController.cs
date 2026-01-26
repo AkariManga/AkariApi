@@ -64,7 +64,7 @@ namespace AkariApi.Controllers
             // Check if a file with this hash already exists
             UploadDto? existing = null;
             await _postgresService.OpenAsync();
-            using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at FROM uploads WHERE md5_hash = @hash LIMIT 1", _postgresService.Connection))
+            using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE md5_hash = @hash LIMIT 1", _postgresService.Connection))
             {
                 cmd.Parameters.AddWithValue("hash", fileHash);
                 using (var reader = await cmd.ExecuteReaderAsync())
@@ -77,7 +77,7 @@ namespace AkariApi.Controllers
                             UserId = Guid.Parse(reader.GetString(1)),
                             Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
                             Size = reader.GetInt64(3),
-                            Url = reader.GetString(4),
+                            Url = reader.IsDBNull(4) ? null : reader.GetString(4),
                             UsageCount = reader.GetInt32(5),
                             Tags = reader.GetFieldValue<string[]>(6),
                             CreatedAt = reader.GetDateTime(7)
@@ -162,7 +162,8 @@ namespace AkariApi.Controllers
                 Url = uploadDto.Url,
                 UsageCount = uploadDto.UsageCount,
                 Tags = uploadDto.Tags,
-                CreatedAt = uploadDto.CreatedAt
+                CreatedAt = uploadDto.CreatedAt,
+                Deleted = false
             };
 
             return Ok(SuccessResponse<UploadResponse>.Create(uploadResponse));
@@ -194,7 +195,7 @@ namespace AkariApi.Controllers
                 }
                 else
                 {
-                    using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads", _postgresService.Connection))
+                    using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE deleted = FALSE", _postgresService.Connection))
                     {
                         totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
                     }
@@ -206,7 +207,7 @@ namespace AkariApi.Controllers
                 if (!string.IsNullOrWhiteSpace(query))
                 {
                     var searchQuery = @"
-                        SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at
+                        SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted
                         FROM uploads
                         WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)
                         ORDER BY ts_rank(search_vector, plainto_tsquery('english', @query)) DESC
@@ -224,9 +225,9 @@ namespace AkariApi.Controllers
                                 {
                                     Id = reader.GetGuid(0),
                                     UserId = reader.GetGuid(1),
-                                    Md5Hash = reader.GetString(2),
+                                    Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
                                     Size = reader.GetInt64(3),
-                                    Url = reader.GetString(4),
+                                    Url = reader.IsDBNull(4) ? null : reader.GetString(4),
                                     UsageCount = reader.GetInt32(5),
                                     Tags = reader.GetFieldValue<string[]>(6),
                                     CreatedAt = reader.GetDateTime(7)
@@ -237,7 +238,7 @@ namespace AkariApi.Controllers
                 }
                 else
                 {
-                    using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at FROM uploads ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
+                    using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE deleted = FALSE ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
                     {
                         cmd.Parameters.AddWithValue("offset", offset);
                         cmd.Parameters.AddWithValue("limit", clampedPageSize);
@@ -249,12 +250,13 @@ namespace AkariApi.Controllers
                                 {
                                     Id = reader.GetGuid(0),
                                     UserId = reader.GetGuid(1),
-                                    Md5Hash = reader.GetString(2),
+                                    Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
                                     Size = reader.GetInt64(3),
-                                    Url = reader.GetString(4),
+                                    Url = reader.IsDBNull(4) ? null : reader.GetString(4),
                                     UsageCount = reader.GetInt32(5),
                                     Tags = reader.GetFieldValue<string[]>(6),
-                                    CreatedAt = reader.GetDateTime(7)
+                                    CreatedAt = reader.GetDateTime(7),
+                                    Deleted = reader.GetBoolean(8)
                                 });
                             }
                         }
@@ -267,12 +269,13 @@ namespace AkariApi.Controllers
                 {
                     Id = dto.Id,
                     UserId = dto.UserId!,
-                    Md5Hash = dto.Md5Hash!,
+                    Md5Hash = dto.Md5Hash,
                     Size = dto.Size,
-                    Url = dto.Url!,
+                    Url = dto.Url,
                     UsageCount = dto.UsageCount,
                     Tags = dto.Tags,
-                    CreatedAt = dto.CreatedAt
+                    CreatedAt = dto.CreatedAt,
+                    Deleted = dto.Deleted
                 }).ToList();
 
                 var paginatedResponse = new PaginatedResponse<UploadResponse>
@@ -314,7 +317,7 @@ namespace AkariApi.Controllers
                 await _postgresService.OpenAsync();
 
                 long totalCount;
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE user_id = @userId", _postgresService.Connection))
+                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE user_id = @userId AND deleted = FALSE", _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("userId", userId);
                     totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
@@ -323,7 +326,7 @@ namespace AkariApi.Controllers
                 var offset = (clampedPage - 1) * clampedPageSize;
                 var uploads = new List<UploadDto>();
 
-                using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at FROM uploads WHERE user_id = @userId ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
+                using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE user_id = @userId AND deleted = FALSE ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("userId", userId);
                     cmd.Parameters.AddWithValue("offset", offset);
@@ -336,12 +339,13 @@ namespace AkariApi.Controllers
                             {
                                 Id = reader.GetGuid(0),
                                 UserId = reader.GetGuid(1),
-                                Md5Hash = reader.GetString(2),
+                                Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
                                 Size = reader.GetInt64(3),
-                                Url = reader.GetString(4),
+                                Url = reader.IsDBNull(4) ? null : reader.GetString(4),
                                 UsageCount = reader.GetInt32(5),
                                 Tags = reader.GetFieldValue<string[]>(6),
-                                CreatedAt = reader.GetDateTime(7)
+                                CreatedAt = reader.GetDateTime(7),
+                                Deleted = reader.GetBoolean(8)
                             });
                         }
                     }
@@ -353,12 +357,13 @@ namespace AkariApi.Controllers
                 {
                     Id = dto.Id,
                     UserId = dto.UserId!,
-                    Md5Hash = dto.Md5Hash!,
+                    Md5Hash = dto.Md5Hash,
                     Size = dto.Size,
-                    Url = dto.Url!,
+                    Url = dto.Url,
                     UsageCount = dto.UsageCount,
                     Tags = dto.Tags,
-                    CreatedAt = dto.CreatedAt
+                    CreatedAt = dto.CreatedAt,
+                    Deleted = dto.Deleted
                 }).ToList();
 
                 var paginatedResponse = new PaginatedResponse<UploadResponse>
@@ -443,7 +448,7 @@ namespace AkariApi.Controllers
 
                 if (usageCount > 0)
                 {
-                    using (var cmd = new NpgsqlCommand("UPDATE uploads SET deleted = TRUE WHERE id = @id", _postgresService.Connection))
+                    using (var cmd = new NpgsqlCommand("UPDATE uploads SET deleted = TRUE, url = NULL, md5_hash = NULL WHERE id = @id", _postgresService.Connection))
                     {
                         cmd.Parameters.AddWithValue("id", id);
                         await cmd.ExecuteNonQueryAsync();

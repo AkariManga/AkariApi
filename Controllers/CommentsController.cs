@@ -88,6 +88,7 @@ namespace AkariApi.Controllers
                         u.username, u.display_name, u.role, u.banned,
                         up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
                         up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at,
+                        up.deleted as upload_deleted,
                         COALESCE(reply_counts.reply_count, 0) as reply_count
                     FROM comments c
                     JOIN profiles u ON c.user_id = u.id
@@ -138,12 +139,13 @@ namespace AkariApi.Controllers
                                 {
                                     Id = reader.GetGuid(reader.GetOrdinal("attachment_id")),
                                     UserId = reader.GetGuid(reader.GetOrdinal("user_id")),
-                                    Md5Hash = reader.GetString(reader.GetOrdinal("upload_md5_hash")),
+                                    Md5Hash = reader.IsDBNull(reader.GetOrdinal("upload_md5_hash")) ? null : reader.GetString(reader.GetOrdinal("upload_md5_hash")),
                                     Size = reader.GetInt64(reader.GetOrdinal("upload_size")),
-                                    Url = reader.GetString(reader.GetOrdinal("upload_url")),
+                                    Url = reader.IsDBNull(reader.GetOrdinal("upload_url")) ? null : reader.GetString(reader.GetOrdinal("upload_url")),
                                     UsageCount = reader.GetInt32(reader.GetOrdinal("upload_usage_count")),
                                     Tags = reader.GetFieldValue<string[]>(reader.GetOrdinal("upload_tags")),
-                                    CreatedAt = reader.GetDateTime(reader.GetOrdinal("upload_created_at"))
+                                    CreatedAt = reader.GetDateTime(reader.GetOrdinal("upload_created_at")),
+                                    Deleted = reader.GetBoolean(reader.GetOrdinal("upload_deleted"))
                                 }
                             };
                             comments.Add(comment);
@@ -252,7 +254,8 @@ namespace AkariApi.Controllers
                             c.attachment_id,
                             u.username, u.display_name, u.role, u.banned,
                             up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
-                            up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at
+                            up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at,
+                            up.deleted as upload_deleted
                         FROM comments c
                         JOIN profiles u ON c.user_id = u.id
                         LEFT JOIN uploads up ON c.attachment_id = up.id
@@ -266,7 +269,8 @@ namespace AkariApi.Controllers
                             c.attachment_id,
                             u.username, u.display_name, u.role, u.banned,
                             up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
-                            up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at
+                            up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at,
+                            up.deleted as upload_deleted
                         FROM comments c
                         JOIN profiles u ON c.user_id = u.id
                         LEFT JOIN uploads up ON c.attachment_id = up.id
@@ -308,12 +312,13 @@ namespace AkariApi.Controllers
                                 {
                                     Id = reader.GetGuid(reader.GetOrdinal("attachment_id")),
                                     UserId = reader.GetGuid(reader.GetOrdinal("user_id")),
-                                    Md5Hash = reader.GetString(reader.GetOrdinal("upload_md5_hash")),
+                                    Md5Hash = reader.IsDBNull(reader.GetOrdinal("upload_md5_hash")) ? null : reader.GetString(reader.GetOrdinal("upload_md5_hash")),
                                     Size = reader.GetInt64(reader.GetOrdinal("upload_size")),
-                                    Url = reader.GetString(reader.GetOrdinal("upload_url")),
+                                    Url = reader.IsDBNull(reader.GetOrdinal("upload_url")) ? null : reader.GetString(reader.GetOrdinal("upload_url")),
                                     UsageCount = reader.GetInt32(reader.GetOrdinal("upload_usage_count")),
                                     Tags = reader.GetFieldValue<string[]>(reader.GetOrdinal("upload_tags")),
-                                    CreatedAt = reader.GetDateTime(reader.GetOrdinal("upload_created_at"))
+                                    CreatedAt = reader.GetDateTime(reader.GetOrdinal("upload_created_at")),
+                                    Deleted = reader.GetBoolean(reader.GetOrdinal("upload_deleted"))
                                 },
                                 Replies = new List<CommentWithRepliesResponse>()
                             };
@@ -624,7 +629,8 @@ namespace AkariApi.Controllers
                         c.attachment_id,
                         u.username, u.display_name, u.role, u.banned,
                         up.md5_hash as upload_md5_hash, up.size as upload_size, up.url as upload_url,
-                        up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at
+                        up.usage_count as upload_usage_count, up.tags as upload_tags, up.created_at as upload_created_at,
+                        up.deleted as upload_deleted
                     FROM comments c
                     JOIN profiles u ON c.user_id = u.id
                     LEFT JOIN uploads up ON c.attachment_id = up.id
@@ -666,12 +672,13 @@ namespace AkariApi.Controllers
                             {
                                 Id = reader.GetGuid(reader.GetOrdinal("attachment_id")),
                                 UserId = reader.GetGuid(reader.GetOrdinal("user_id")),
-                                Md5Hash = reader.GetString(reader.GetOrdinal("upload_md5_hash")),
+                                Md5Hash = reader.IsDBNull(reader.GetOrdinal("upload_md5_hash")) ? null : reader.GetString(reader.GetOrdinal("upload_md5_hash")),
                                 Size = reader.GetInt64(reader.GetOrdinal("upload_size")),
-                                Url = reader.GetString(reader.GetOrdinal("upload_url")),
+                                Url = reader.IsDBNull(reader.GetOrdinal("upload_url")) ? null : reader.GetString(reader.GetOrdinal("upload_url")),
                                 UsageCount = reader.GetInt32(reader.GetOrdinal("upload_usage_count")),
                                 Tags = reader.GetFieldValue<string[]>(reader.GetOrdinal("upload_tags")),
-                                CreatedAt = reader.GetDateTime(reader.GetOrdinal("upload_created_at"))
+                                CreatedAt = reader.GetDateTime(reader.GetOrdinal("upload_created_at")),
+                                Deleted = reader.GetBoolean(reader.GetOrdinal("upload_deleted"))
                             }
                         };
                     }
