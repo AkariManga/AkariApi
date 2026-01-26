@@ -327,5 +327,190 @@ namespace AkariApi.Controllers
                 return StatusCode(500, ErrorResponse.Create("An error occurred while retrieving uploads", ex.Message));
             }
         }
+
+        /// <summary>
+        /// Search uploads
+        /// </summary>
+        /// <param name="query">The search query string.</param>
+        /// <param name="page">The page number for pagination (default is 1).</param>
+        /// <param name="pageSize">The number of items per page (default is 20, max is 100).</param>
+        /// <returns>A list of matching uploads.</returns>
+        [HttpGet("search")]
+        [CacheControl(CacheDuration.OneHour, CacheDuration.SixHours)]
+        [ProducesResponseType(typeof(SuccessResponse<PaginatedResponse<UploadResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> SearchUploads(
+            [FromQuery] string query,
+            [FromQuery, Range(1, int.MaxValue)] int page = 1,
+            [FromQuery, Range(1, 100)] int pageSize = 20)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                return BadRequest(ErrorResponse.Create("Search query is required"));
+
+            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                long totalCount;
+                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("query", query);
+                    totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+                }
+
+                var offset = (clampedPage - 1) * clampedPageSize;
+                var searchQuery = @"
+                    SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at
+                    FROM uploads
+                    WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)
+                    ORDER BY ts_rank(search_vector, plainto_tsquery('english', @query)) DESC
+                    OFFSET @offset LIMIT @limit";
+                var uploads = new List<UploadResponse>();
+                using (var cmd = new NpgsqlCommand(searchQuery, _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("query", query);
+                    cmd.Parameters.AddWithValue("offset", offset);
+                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            uploads.Add(new UploadResponse
+                            {
+                                Id = reader.GetGuid(0),
+                                UserId = reader.GetGuid(1),
+                                Md5Hash = reader.GetString(2),
+                                Size = reader.GetInt64(3),
+                                Url = reader.GetString(4),
+                                UsageCount = reader.GetInt32(5),
+                                Tags = reader.GetFieldValue<string[]>(6),
+                                CreatedAt = reader.GetDateTime(7)
+                            });
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                var paginatedResponse = new PaginatedResponse<UploadResponse>
+                {
+                    Items = uploads,
+                    TotalItems = (int)totalCount,
+                    CurrentPage = clampedPage,
+                    PageSize = clampedPageSize
+                };
+
+                return Ok(SuccessResponse<PaginatedResponse<UploadResponse>>.Create(paginatedResponse));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to search uploads", ex.Message));
+            }
+        }
+
+        [HttpDelete("{id}")]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> DeleteUpload([FromRoute] Guid id)
+        {
+            await _supabaseService.InitializeAsync();
+
+            var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(error))
+            {
+                return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
+            }
+
+            Guid uploadUserId = Guid.Empty;
+            string? md5Hash = null;
+            int usageCount = 0;
+            bool isDeleted = false;
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                using (var cmd = new NpgsqlCommand("SELECT user_id, md5_hash, usage_count, deleted FROM uploads WHERE id = @id LIMIT 1", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("id", id);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            uploadUserId = reader.GetGuid(0);
+                            md5Hash = reader.IsDBNull(1) ? null : reader.GetString(1);
+                            usageCount = reader.GetInt32(2);
+                            isDeleted = reader.GetBoolean(3);
+                        }
+                    }
+                }
+
+                if (md5Hash == null)
+                {
+                    return NotFound(ErrorResponse.Create("Upload not found", "Upload does not exist", 404));
+                }
+
+                if (isDeleted)
+                {
+                    return NotFound(ErrorResponse.Create("Upload not found", "Upload already deleted", 404));
+                }
+
+                if (uploadUserId != userId)
+                {
+                    return StatusCode(403, ErrorResponse.Create("Forbidden", "You do not own this upload", 403));
+                }
+
+                bool hasDeduplicates = false;
+                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE md5_hash = @hash AND id <> @id", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("hash", md5Hash);
+                    cmd.Parameters.AddWithValue("id", id);
+                    var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+                    hasDeduplicates = count > 0;
+                }
+
+                if (usageCount > 0)
+                {
+                    using (var cmd = new NpgsqlCommand("UPDATE uploads SET deleted = TRUE WHERE id = @id", _postgresService.Connection))
+                    {
+                        cmd.Parameters.AddWithValue("id", id);
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+                }
+                else
+                {
+                    using (var cmd = new NpgsqlCommand("DELETE FROM uploads WHERE id = @id", _postgresService.Connection))
+                    {
+                        cmd.Parameters.AddWithValue("id", id);
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+                }
+
+                if (usageCount == 0 && !hasDeduplicates)
+                {
+                    await _supabaseService.AdminClient.Storage
+                        .From(_bucketName)
+                        .Remove(new List<string> { $"{md5Hash}.webp" });
+                }
+
+                var message = usageCount > 0 ? "Upload marked as deleted." : "Upload deleted.";
+                return Ok(SuccessResponse<string>.Create(message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ErrorResponse.Create("An error occurred while deleting the upload", ex.Message));
+            }
+            finally
+            {
+                await _postgresService.CloseAsync();
+            }
+        }
     }
 }
