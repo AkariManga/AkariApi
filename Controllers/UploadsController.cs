@@ -172,7 +172,10 @@ namespace AkariApi.Controllers
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes)]
         [ProducesResponseType(typeof(SuccessResponse<PaginatedResponse<UploadResponse>>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> GetUploads([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
+        public async Task<IActionResult> GetUploads(
+            [FromQuery] string? query = null,
+            [FromQuery, Range(1, int.MaxValue)] int page = 1,
+            [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
 
@@ -181,33 +184,79 @@ namespace AkariApi.Controllers
                 await _postgresService.OpenAsync();
 
                 long totalCount;
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads", _postgresService.Connection))
+                if (!string.IsNullOrWhiteSpace(query))
                 {
-                    totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+                    using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)", _postgresService.Connection))
+                    {
+                        cmd.Parameters.AddWithValue("query", query);
+                        totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+                    }
+                }
+                else
+                {
+                    using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads", _postgresService.Connection))
+                    {
+                        totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
+                    }
                 }
 
                 var offset = (clampedPage - 1) * clampedPageSize;
                 var uploads = new List<UploadDto>();
 
-                using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at FROM uploads ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
+                if (!string.IsNullOrWhiteSpace(query))
                 {
-                    cmd.Parameters.AddWithValue("offset", offset);
-                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    var searchQuery = @"
+                        SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at
+                        FROM uploads
+                        WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)
+                        ORDER BY ts_rank(search_vector, plainto_tsquery('english', @query)) DESC
+                        OFFSET @offset LIMIT @limit";
+                    using (var cmd = new NpgsqlCommand(searchQuery, _postgresService.Connection))
                     {
-                        while (await reader.ReadAsync())
+                        cmd.Parameters.AddWithValue("query", query);
+                        cmd.Parameters.AddWithValue("offset", offset);
+                        cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                        using (var reader = await cmd.ExecuteReaderAsync())
                         {
-                            uploads.Add(new UploadDto
+                            while (await reader.ReadAsync())
                             {
-                                Id = reader.GetGuid(0),
-                                UserId = reader.GetGuid(1),
-                                Md5Hash = reader.GetString(2),
-                                Size = reader.GetInt64(3),
-                                Url = reader.GetString(4),
-                                UsageCount = reader.GetInt32(5),
-                                Tags = reader.GetFieldValue<string[]>(6),
-                                CreatedAt = reader.GetDateTime(7)
-                            });
+                                uploads.Add(new UploadDto
+                                {
+                                    Id = reader.GetGuid(0),
+                                    UserId = reader.GetGuid(1),
+                                    Md5Hash = reader.GetString(2),
+                                    Size = reader.GetInt64(3),
+                                    Url = reader.GetString(4),
+                                    UsageCount = reader.GetInt32(5),
+                                    Tags = reader.GetFieldValue<string[]>(6),
+                                    CreatedAt = reader.GetDateTime(7)
+                                });
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at FROM uploads ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
+                    {
+                        cmd.Parameters.AddWithValue("offset", offset);
+                        cmd.Parameters.AddWithValue("limit", clampedPageSize);
+                        using (var reader = await cmd.ExecuteReaderAsync())
+                        {
+                            while (await reader.ReadAsync())
+                            {
+                                uploads.Add(new UploadDto
+                                {
+                                    Id = reader.GetGuid(0),
+                                    UserId = reader.GetGuid(1),
+                                    Md5Hash = reader.GetString(2),
+                                    Size = reader.GetInt64(3),
+                                    Url = reader.GetString(4),
+                                    UsageCount = reader.GetInt32(5),
+                                    Tags = reader.GetFieldValue<string[]>(6),
+                                    CreatedAt = reader.GetDateTime(7)
+                                });
+                            }
                         }
                     }
                 }
@@ -325,90 +374,6 @@ namespace AkariApi.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, ErrorResponse.Create("An error occurred while retrieving uploads", ex.Message));
-            }
-        }
-
-        /// <summary>
-        /// Search uploads
-        /// </summary>
-        /// <param name="query">The search query string.</param>
-        /// <param name="page">The page number for pagination (default is 1).</param>
-        /// <param name="pageSize">The number of items per page (default is 20, max is 100).</param>
-        /// <returns>A list of matching uploads.</returns>
-        [HttpGet("search")]
-        [CacheControl(CacheDuration.OneHour, CacheDuration.SixHours)]
-        [ProducesResponseType(typeof(SuccessResponse<PaginatedResponse<UploadResponse>>), 200)]
-        [ProducesResponseType(typeof(ErrorResponse), 400)]
-        [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> SearchUploads(
-            [FromQuery] string query,
-            [FromQuery, Range(1, int.MaxValue)] int page = 1,
-            [FromQuery, Range(1, 100)] int pageSize = 20)
-        {
-            if (string.IsNullOrWhiteSpace(query))
-                return BadRequest(ErrorResponse.Create("Search query is required"));
-
-            var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
-
-            try
-            {
-                await _postgresService.OpenAsync();
-
-                long totalCount;
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("query", query);
-                    totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
-                }
-
-                var offset = (clampedPage - 1) * clampedPageSize;
-                var searchQuery = @"
-                    SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at
-                    FROM uploads
-                    WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)
-                    ORDER BY ts_rank(search_vector, plainto_tsquery('english', @query)) DESC
-                    OFFSET @offset LIMIT @limit";
-                var uploads = new List<UploadResponse>();
-                using (var cmd = new NpgsqlCommand(searchQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("query", query);
-                    cmd.Parameters.AddWithValue("offset", offset);
-                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            uploads.Add(new UploadResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                UserId = reader.GetGuid(1),
-                                Md5Hash = reader.GetString(2),
-                                Size = reader.GetInt64(3),
-                                Url = reader.GetString(4),
-                                UsageCount = reader.GetInt32(5),
-                                Tags = reader.GetFieldValue<string[]>(6),
-                                CreatedAt = reader.GetDateTime(7)
-                            });
-                        }
-                    }
-                }
-
-                await _postgresService.CloseAsync();
-
-                var paginatedResponse = new PaginatedResponse<UploadResponse>
-                {
-                    Items = uploads,
-                    TotalItems = (int)totalCount,
-                    CurrentPage = clampedPage,
-                    PageSize = clampedPageSize
-                };
-
-                return Ok(SuccessResponse<PaginatedResponse<UploadResponse>>.Create(paginatedResponse));
-            }
-            catch (Exception ex)
-            {
-                await _postgresService.CloseAsync();
-                return StatusCode(500, ErrorResponse.Create("Failed to search uploads", ex.Message));
             }
         }
 
