@@ -484,14 +484,21 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                // Check if comment exists
-                var commentQuery = "SELECT id FROM comments WHERE id = @comment_id";
+                // Check if comment exists and prevent self-reporting
+                var commentQuery = "SELECT user_id FROM comments WHERE id = @comment_id";
+                Guid? commentOwnerId = null;
                 using (var cmd = new NpgsqlCommand(commentQuery, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("@comment_id", commentId);
                     var result = await cmd.ExecuteScalarAsync();
                     if (result == null)
                         return NotFound(ErrorResponse.Create("Comment not found", status: 404));
+                    commentOwnerId = (Guid)result;
+                }
+
+                if (commentOwnerId == userId)
+                {
+                    return BadRequest(ErrorResponse.Create("You cannot report your own comment"));
                 }
 
                 // Insert the report (UNIQUE constraint will prevent duplicates)
