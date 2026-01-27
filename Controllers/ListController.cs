@@ -170,7 +170,7 @@ namespace AkariApi.Controllers
                                         UserId = listUserId,
                                         Username = reader.GetString(7),
                                         DisplayName = reader.GetString(8),
-                                        Role = reader.GetString(9),
+                                        Role = (UserRole)Enum.Parse(typeof(UserRole), reader.GetString(9)),
                                         Banned = reader.GetBoolean(10)
                                     },
                                     Entries = new List<UserMangaListEntryResponse>()

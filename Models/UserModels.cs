@@ -2,6 +2,14 @@ using System.ComponentModel.DataAnnotations;
 
 namespace AkariApi.Models
 {
+    public enum UserRole
+    {
+        user,
+        admin,
+        moderator,
+        owner
+    }
+
     public class UserResponse
     {
         [Required]
@@ -14,7 +22,7 @@ namespace AkariApi.Models
         public string DisplayName { get; set; } = string.Empty;
 
         [Required]
-        public string Role { get; set; } = "user";
+        public UserRole Role { get; set; } = UserRole.user;
 
         [Required]
         public bool Banned { get; set; } = false;
@@ -32,7 +40,7 @@ namespace AkariApi.Models
         public string DisplayName { get; set; } = string.Empty;
 
         [Required]
-        public string Role { get; set; } = "user";
+        public UserRole Role { get; set; } = UserRole.user;
 
         [Required]
         public bool Banned { get; set; } = false;

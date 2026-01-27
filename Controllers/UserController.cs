@@ -150,7 +150,7 @@ namespace AkariApi.Controllers
                     UserId = userId,
                     Username = reader.GetString(0),
                     DisplayName = reader.GetString(1),
-                    Role = reader.GetString(2),
+                    Role = (UserRole)Enum.Parse(typeof(UserRole), reader.GetString(2)),
                     Banned = reader.GetBoolean(3)
                 };
 
@@ -237,7 +237,7 @@ namespace AkariApi.Controllers
                     UserId = userId,
                     Username = reader.GetString(0),
                     DisplayName = reader.GetString(1),
-                    Role = reader.GetString(2),
+                    Role = (UserRole)Enum.Parse(typeof(UserRole), reader.GetString(2)),
                     Banned = reader.GetBoolean(3)
                 };
 
@@ -325,7 +325,7 @@ namespace AkariApi.Controllers
                         UserId = userId,
                         Username = reader.GetString(0),
                         DisplayName = reader.GetString(1),
-                        Role = reader.GetString(2),
+                        Role = (UserRole)Enum.Parse(typeof(UserRole), reader.GetString(2)),
                         Banned = reader.GetBoolean(3),
                         CreatedAt = reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
                         TotalComments = reader.GetInt64(5),
