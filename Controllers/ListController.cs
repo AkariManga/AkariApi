@@ -657,6 +657,9 @@ namespace AkariApi.Controllers
                     }
                 }
 
+                // Declare variable in outer scope so it's accessible later
+                int currentOrder;
+
                 // Check if entry exists and belongs to this list
                 using (var cmd = new NpgsqlCommand("SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId AND e.list_id = @listId", _postgresService.Connection))
                 {
@@ -671,7 +674,7 @@ namespace AkariApi.Controllers
                             return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list"));
                         }
 
-                        var currentOrder = reader.GetInt32(3);
+                        currentOrder = reader.GetInt32(3);
                         var newOrder = request.NewOrderIndex;
 
                         if (currentOrder == newOrder)
@@ -695,13 +698,35 @@ namespace AkariApi.Controllers
                     }
                 }
 
-                // Call the RPC function to move the entry
-                using (var cmd = new NpgsqlCommand("SELECT move_list_entry(@p_list_id, @p_entry_id, @p_new_order_index)", _postgresService.Connection))
+                // Shift other entries to make room
+                if (request.NewOrderIndex > currentOrder)
                 {
-                    cmd.Parameters.AddWithValue("p_list_id", id);
-                    cmd.Parameters.AddWithValue("p_entry_id", entryId);
-                    cmd.Parameters.AddWithValue("p_new_order_index", request.NewOrderIndex);
+                    // Moving down: decrement order_index for entries between current and new position
+                    using (var cmd = new NpgsqlCommand("UPDATE user_manga_list_entries SET order_index = order_index - 1 WHERE list_id = @listId AND order_index > @currentOrder AND order_index <= @newOrder", _postgresService.Connection))
+                    {
+                        cmd.Parameters.AddWithValue("listId", id);
+                        cmd.Parameters.AddWithValue("currentOrder", currentOrder);
+                        cmd.Parameters.AddWithValue("newOrder", request.NewOrderIndex);
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+                }
+                else
+                {
+                    // Moving up: increment order_index for entries between new and current position
+                    using (var cmd = new NpgsqlCommand("UPDATE user_manga_list_entries SET order_index = order_index + 1 WHERE list_id = @listId AND order_index >= @newOrder AND order_index < @currentOrder", _postgresService.Connection))
+                    {
+                        cmd.Parameters.AddWithValue("listId", id);
+                        cmd.Parameters.AddWithValue("newOrder", request.NewOrderIndex);
+                        cmd.Parameters.AddWithValue("currentOrder", currentOrder);
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+                }
 
+                // Update the target entry to its new position
+                using (var cmd = new NpgsqlCommand("UPDATE user_manga_list_entries SET order_index = @newOrder, updated_at = NOW() WHERE id = @entryId", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("newOrder", request.NewOrderIndex);
+                    cmd.Parameters.AddWithValue("entryId", entryId);
                     await cmd.ExecuteNonQueryAsync();
                 }
 

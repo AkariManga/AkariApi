@@ -743,11 +743,48 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                using (var cmd = new NpgsqlCommand("SELECT batch_update_user_bookmarks(@p_user_id, @p_manga_ids, @p_chapter_numbers)", _postgresService.Connection))
+                // Single query that resolves all chapters and upserts bookmarks
+                var batchQuery = @"
+                    WITH input_data AS (
+                        SELECT
+                            unnest(@mangaIds::uuid[]) as manga_id,
+                            unnest(@chapterNumbers::double precision[]) as chapter_number
+                    ),
+                    resolved_chapters AS (
+                        SELECT
+                            i.manga_id,
+                            CASE
+                                WHEN i.chapter_number = 0 THEN (
+                                    SELECT id
+                                    FROM chapters
+                                    WHERE manga_id = i.manga_id
+                                    ORDER BY number ASC
+                                    LIMIT 1
+                                )
+                                ELSE (
+                                    SELECT id
+                                    FROM chapters
+                                    WHERE manga_id = i.manga_id
+                                    ORDER BY ABS(number - i.chapter_number) ASC, number ASC
+                                    LIMIT 1
+                                )
+                            END as chapter_id
+                        FROM input_data i
+                    )
+                    INSERT INTO user_bookmarks (user_id, manga_id, last_read_chapter_id, updated_at, created_at)
+                    SELECT @userId, manga_id, chapter_id, NOW(), NOW()
+                    FROM resolved_chapters
+                    WHERE chapter_id IS NOT NULL
+                    ON CONFLICT (user_id, manga_id)
+                    DO UPDATE SET
+                        last_read_chapter_id = EXCLUDED.last_read_chapter_id,
+                        updated_at = NOW()";
+
+                using (var cmd = new NpgsqlCommand(batchQuery, _postgresService.Connection))
                 {
-                    cmd.Parameters.AddWithValue("p_user_id", userId);
-                    cmd.Parameters.AddWithValue("p_manga_ids", request.Items.Select(i => i.MangaId).ToArray());
-                    cmd.Parameters.AddWithValue("p_chapter_numbers", request.Items.Select(i => i.ChapterNumber).ToArray());
+                    cmd.Parameters.AddWithValue("userId", userId);
+                    cmd.Parameters.AddWithValue("mangaIds", request.Items.Select(i => i.MangaId).ToArray());
+                    cmd.Parameters.AddWithValue("chapterNumbers", request.Items.Select(i => (double)i.ChapterNumber).ToArray());
 
                     await cmd.ExecuteNonQueryAsync();
                 }

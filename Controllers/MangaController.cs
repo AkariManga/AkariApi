@@ -224,68 +224,77 @@ LIMIT @p_limit OFFSET @p_offset";
             {
                 await _postgresService.OpenAsync();
 
-                var rpcQuery = "SELECT json_agg(row_to_json(t)) FROM get_manga_views_recent(@p_days, @p_limit, @p_offset) t";
-                string? content;
-                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
+                var popularQuery = @"
+                    SELECT
+                        m.id,
+                        m.orig_id,
+                        m.title,
+                        m.cover,
+                        m.description,
+                        m.status,
+                        m.type,
+                        m.search_vector,
+                        m.authors,
+                        m.genres,
+                        m.mal_id,
+                        m.ani_id,
+                        m.created_at,
+                        m.updated_at,
+                        m.alternative_titles,
+                        m.score,
+                        COUNT(v.id) AS view_count,
+                        COUNT(*) OVER() AS total_count
+                    FROM public.manga m
+                    JOIN public.manga_views v ON v.manga_id = m.id
+                    WHERE v.viewed_at > now() - (@p_days || ' days')::interval
+                    GROUP BY
+                        m.id, m.orig_id, m.title, m.cover, m.description,
+                        m.status, m.type, m.search_vector, m.authors, m.genres,
+                        m.mal_id, m.ani_id, m.created_at, m.updated_at,
+                        m.alternative_titles, m.score
+                    ORDER BY COUNT(v.id) DESC
+                    LIMIT @p_limit OFFSET @p_offset";
+
+                var mangaList = new List<MangaResponse>();
+                long totalCount = 0;
+
+                using (var cmd = new NpgsqlCommand(popularQuery, _postgresService.Connection))
                 {
                     cmd.Parameters.AddWithValue("p_days", days);
                     cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
                     cmd.Parameters.AddWithValue("p_offset", offset);
+
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
-                        if (await reader.ReadAsync())
+                        while (await reader.ReadAsync())
                         {
-                            content = reader.IsDBNull(0) ? "[]" : reader.GetString(0);
-                        }
-                        else
-                        {
-                            content = null;
+                            var manga = new MangaResponse
+                            {
+                                Id = reader.GetGuid(0),
+                                Title = reader.GetString(2),
+                                Cover = reader.GetString(3),
+                                Description = reader.GetString(4),
+                                Status = reader.GetString(5),
+                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
+                                Authors = (string[])reader.GetValue(8),
+                                Genres = (string[])reader.GetValue(9),
+                                MalId = reader.IsDBNull(10) ? null : (int?)reader.GetInt64(10),
+                                AniId = reader.IsDBNull(11) ? null : (int?)reader.GetInt64(11),
+                                CreatedAt = reader.GetDateTime(12),
+                                UpdatedAt = reader.GetDateTime(13),
+                                AlternativeTitles = reader.IsDBNull(14) ? null : (string[])reader.GetValue(14),
+                                Score = reader.GetDecimal(15),
+                                Views = reader.GetInt64(16) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(16)
+                            };
+                            mangaList.Add(manga);
+
+                            if (totalCount == 0)
+                            {
+                                totalCount = reader.GetInt64(17);
+                            }
                         }
                     }
                 }
-
-                await _postgresService.CloseAsync();
-
-                if (string.IsNullOrEmpty(content))
-                {
-                    return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
-                    {
-                        Items = new List<MangaResponse>(),
-                        TotalItems = 0,
-                        CurrentPage = clampedPage,
-                        PageSize = clampedPageSize
-                    }));
-                }
-
-                List<PopularMangaResponse>? popularManga = null;
-                try
-                {
-                    popularManga = JsonSerializer.Deserialize<List<PopularMangaResponse>>(content, _jsonOptions);
-                }
-                catch (JsonException)
-                {
-                    return StatusCode(500, ErrorResponse.Create("Failed to parse popular manga data", "Invalid JSON response from database"));
-                }
-
-                var mangaList = (popularManga ?? new List<PopularMangaResponse>()).Select(p => new MangaResponse
-                {
-                    Id = p.Id,
-                    Title = p.Title,
-                    Cover = p.Cover,
-                    Description = p.Description,
-                    Status = p.Status,
-                    Type = Enum.Parse<MangaType>(p.Type),
-                    Authors = p.Authors,
-                    Genres = p.Genres,
-                    Views = (int)p.ViewCount,
-                    AlternativeTitles = p.AlternativeTitles,
-                    MalId = p.MalId,
-                    AniId = p.AniId,
-                    CreatedAt = p.CreatedAt,
-                    UpdatedAt = p.UpdatedAt,
-                }).ToList();
-
-                var totalCount = popularManga?.FirstOrDefault()?.TotalCount ?? 0;
 
                 return Ok(SuccessResponse<MangaListResponse>.Create(new MangaListResponse
                 {
