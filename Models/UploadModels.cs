@@ -72,4 +72,10 @@ namespace AkariApi.Models
         [Required]
         public required string[] Tags { get; set; } = Array.Empty<string>();
     }
+
+    public class BatchUploadRequest
+    {
+        [Required]
+        public required List<Guid> Ids { get; set; } = new();
+    }
 }

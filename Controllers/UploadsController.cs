@@ -382,6 +382,68 @@ namespace AkariApi.Controllers
             }
         }
 
+        [HttpPost("batch")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes)]
+        [ProducesResponseType(typeof(SuccessResponse<List<UploadResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetBatchUploads([FromBody] BatchUploadRequest request)
+        {
+            if (request.Ids == null || request.Ids.Count == 0 || request.Ids.Count > 100)
+                return BadRequest(ErrorResponse.Create("Invalid request. Provide 1-100 IDs."));
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var uploads = new List<UploadDto>();
+
+                using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE id = ANY(@ids) AND deleted = FALSE", _postgresService.Connection))
+                {
+                    cmd.Parameters.AddWithValue("ids", request.Ids.ToArray());
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            uploads.Add(new UploadDto
+                            {
+                                Id = reader.GetGuid(0),
+                                UserId = reader.GetGuid(1),
+                                Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
+                                Size = reader.GetInt64(3),
+                                Url = reader.IsDBNull(4) ? null : reader.GetString(4),
+                                UsageCount = reader.GetInt32(5),
+                                Tags = reader.GetFieldValue<string[]>(6),
+                                CreatedAt = reader.GetDateTime(7),
+                                Deleted = reader.GetBoolean(8)
+                            });
+                        }
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+
+                var uploadResponses = uploads.Select(dto => new UploadResponse
+                {
+                    Id = dto.Id,
+                    UserId = dto.UserId,
+                    Md5Hash = dto.Md5Hash,
+                    Size = dto.Size,
+                    Url = dto.Url,
+                    UsageCount = dto.UsageCount,
+                    Tags = dto.Tags,
+                    CreatedAt = dto.CreatedAt,
+                    Deleted = dto.Deleted
+                }).ToList();
+
+                return Ok(SuccessResponse<List<UploadResponse>>.Create(uploadResponses));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ErrorResponse.Create("An error occurred while retrieving uploads", ex.Message));
+            }
+        }
+
         [HttpDelete("{id}")]
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
