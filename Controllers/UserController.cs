@@ -44,6 +44,8 @@ namespace AkariApi.Controllers
                 await _supabaseService.InitializeAsync();
                 await _postgresService.OpenAsync();
 
+                request.UserName = request.UserName.ToLower();
+
                 using var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM profiles WHERE username = @username", _postgresService.Connection);
                 cmd.Parameters.AddWithValue("username", request.UserName);
                 var result = await cmd.ExecuteScalarAsync();
@@ -374,6 +376,8 @@ namespace AkariApi.Controllers
             try
             {
                 await _postgresService.OpenAsync();
+
+                request.Username = request.Username.ToLower();
 
                 // Check if username is a UUID
                 if (Guid.TryParse(request.Username, out _))
