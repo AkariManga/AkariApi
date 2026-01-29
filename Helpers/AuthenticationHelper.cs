@@ -1,5 +1,6 @@
 using AkariApi.Services;
 using Npgsql;
+using Supabase.Gotrue.Exceptions;
 
 namespace AkariApi.Helpers
 {
@@ -37,18 +38,25 @@ namespace AkariApi.Helpers
                 return (Guid.Empty, "Access token required");
             }
 
-            var user = await supabaseService.Client.Auth.GetUser(accessToken);
-            if (user == null || string.IsNullOrEmpty(user.Id))
+            try
             {
-                return (Guid.Empty, "Invalid access token");
-            }
+                var user = await supabaseService.Client.Auth.GetUser(accessToken);
+                if (user == null || string.IsNullOrEmpty(user.Id))
+                {
+                    return (Guid.Empty, "Invalid access token");
+                }
 
-            if (!Guid.TryParse(user.Id, out var userId))
+                if (!Guid.TryParse(user.Id, out var userId))
+                {
+                    return (Guid.Empty, "Invalid user ID format");
+                }
+
+                return (userId, string.Empty);
+            }
+            catch (GotrueException)
             {
-                return (Guid.Empty, "Invalid user ID format");
+                return (Guid.Empty, "Invalid or expired token");
             }
-
-            return (userId, string.Empty);
         }
 
         public static async Task<bool> IsUserBannedAsync(Guid userId, PostgresService postgresService)
