@@ -8,7 +8,7 @@ namespace AkariApi.Models
         Manga,
         Manhwa,
         Manhua,
-        OEL
+        Other
     }
 
     public class ChapterOption
