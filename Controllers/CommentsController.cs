@@ -173,7 +173,6 @@ namespace AkariApi.Controllers
         /// <param name="id">The comment target ID.</param>
         /// <returns>A list of the user's votes on comments in the target.</returns>
         [HttpGet("{id}/votes")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<List<CommentVoteResponse>>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 403)]
@@ -355,7 +354,6 @@ namespace AkariApi.Controllers
         /// <param name="request">The vote request.</param>
         /// <returns>A success message.</returns>
         [HttpPost("{commentId}/vote")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
@@ -463,7 +461,6 @@ namespace AkariApi.Controllers
         /// <param name="request">The report request.</param>
         /// <returns>A success message.</returns>
         [HttpPost("{commentId}/report")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<string>), 201)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
@@ -549,7 +546,6 @@ namespace AkariApi.Controllers
         /// <param name="request">The comment creation request.</param>
         /// <returns>A success message.</returns>
         [HttpPost("{id}")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<CommentResponse>), 201)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
@@ -699,7 +695,6 @@ namespace AkariApi.Controllers
         /// <param name="request">The update request.</param>
         /// <returns>A success message.</returns>
         [HttpPut("{commentId}")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
@@ -774,7 +769,6 @@ namespace AkariApi.Controllers
         /// <param name="commentId">The unique identifier of the comment.</param>
         /// <returns>A success message.</returns>
         [HttpDelete("{commentId}")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 403)]

@@ -750,7 +750,6 @@ END;";
         /// <param name="limit">The maximum number of unique manga to return.</param>
         /// <returns>A list of recently viewed manga.</returns>
         [HttpGet("viewed")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<List<MangaResponse>>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -843,7 +842,6 @@ LIMIT @p_limit;";
         /// <param name="request">The rating request containing the rating value.</param>
         /// <returns>A success message.</returns>
         [HttpPost("{id}/rate")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
@@ -886,7 +884,6 @@ LIMIT @p_limit;";
         /// <param name="id">The unique identifier of the manga.</param>
         /// <returns>The user's rating for the manga.</returns>
         [HttpGet("{id}/rating")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<int?>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -927,7 +924,6 @@ LIMIT @p_limit;";
         /// <param name="id">The unique identifier of the manga.</param>
         /// <returns>A success message.</returns>
         [HttpDelete("{id}/rate")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]

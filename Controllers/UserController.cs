@@ -211,7 +211,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<UserResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> GetMe()
         {
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
@@ -355,7 +354,6 @@ namespace AkariApi.Controllers
         /// <param name="request">The update profile request containing new username and display name.</param>
         /// <returns>The update response.</returns>
         [HttpPut("profile")]
-        [RequireTokenRefresh]
         [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]

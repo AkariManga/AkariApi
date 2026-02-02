@@ -12,7 +12,6 @@ namespace AkariApi.Controllers
     [Route("v2/notifications")]
     [ApiVersion("2.0")]
     [Produces("application/json")]
-    [RequireTokenRefresh]
     public class NotificationsController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;

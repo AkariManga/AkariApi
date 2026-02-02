@@ -238,7 +238,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<UserMangaListPaginatedResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> GetMyLists([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
@@ -326,7 +325,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> CreateList([FromBody] CreateUserMangaListRequest request)
         {
             if (!ModelState.IsValid)
@@ -396,7 +394,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> AddEntryToList(Guid id, [FromBody] CreateUserMangaListEntryRequest request)
         {
             if (!ModelState.IsValid)
@@ -549,7 +546,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> RemoveEntryFromList(Guid id, Guid entryId)
         {
             try
@@ -623,7 +619,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> UpdateEntryOrder(Guid id, Guid entryId, [FromBody] UpdateUserMangaListEntryRequest request)
         {
             if (!ModelState.IsValid)
@@ -774,7 +769,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> DeleteList(Guid id)
         {
             try
@@ -830,7 +824,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<List<Guid>>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> GetMyListsContainingManga(Guid mangaId)
         {
             try

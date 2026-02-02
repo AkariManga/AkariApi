@@ -13,7 +13,6 @@ namespace AkariApi.Controllers
     [Route("v2/bookmarks")]
     [ApiVersion("2.0")]
     [Produces("application/json")]
-    [RequireTokenRefresh]
     public class BookmarksController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;

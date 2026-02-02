@@ -17,7 +17,6 @@ namespace AkariApi.Controllers
     [Route("v2/uploads")]
     [ApiVersion("2.0")]
     [Produces("application/json")]
-    [RequireTokenRefresh]
     public class UploadsController : ControllerBase
     {
         private readonly SupabaseService _supabaseService;
@@ -299,7 +298,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<PaginatedResponse<UploadResponse>>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [RequireTokenRefresh]
         public async Task<IActionResult> GetMyUploads([FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
