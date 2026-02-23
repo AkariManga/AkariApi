@@ -22,6 +22,7 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <returns>The current user's AniList info.</returns>
         [HttpGet("me")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<AniViewer>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -90,6 +91,7 @@ namespace AkariApi.Controllers
         /// <param name="userName">The AniList username</param>
         /// <returns>The user's manga list</returns>
         [HttpGet("mangalist")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<AniMediaListCollection>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]

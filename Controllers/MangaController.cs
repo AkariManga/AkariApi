@@ -750,6 +750,7 @@ END;";
         /// <param name="limit">The maximum number of unique manga to return.</param>
         /// <returns>A list of recently viewed manga.</returns>
         [HttpGet("viewed")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<List<MangaResponse>>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -884,6 +885,7 @@ LIMIT @p_limit;";
         /// <param name="id">The unique identifier of the manga.</param>
         /// <returns>The user's rating for the manga.</returns>
         [HttpGet("{id}/rating")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<int?>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
