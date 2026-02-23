@@ -173,6 +173,7 @@ namespace AkariApi.Controllers
         /// <param name="id">The comment target ID.</param>
         /// <returns>A list of the user's votes on comments in the target.</returns>
         [HttpGet("{id}/votes")]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<List<CommentVoteResponse>>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 403)]

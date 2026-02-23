@@ -32,7 +32,7 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A paginated list of the user's manga lists.</returns>
         [HttpGet("user/{userId}")]
-        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<UserMangaListPaginatedResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         [OptionalTokenRefresh]
@@ -123,7 +123,7 @@ namespace AkariApi.Controllers
         /// <param name="id">The list ID.</param>
         /// <returns>The manga list with all its entries.</returns>
         [HttpGet("{id}")]
-        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<UserMangaListWithEntriesResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -234,7 +234,7 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A paginated list of the user's manga lists.</returns>
         [HttpGet("user/me")]
-        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<UserMangaListPaginatedResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -820,7 +820,7 @@ namespace AkariApi.Controllers
         /// <param name="mangaId">The manga ID.</param>
         /// <returns>An array of the user's list IDs that contain the specified manga.</returns>
         [HttpGet("user/me/manga/{mangaId}")]
-        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<List<Guid>>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]

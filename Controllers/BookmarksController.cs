@@ -31,7 +31,7 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A list of the user's bookmarks.</returns>
         [HttpGet]
-        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<BookmarkListResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -251,7 +251,7 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A list of matching bookmarked manga.</returns>
         [HttpGet("search")]
-        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<BookmarkListResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
@@ -466,7 +466,7 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <returns>The number of unread bookmarked manga.</returns>
         [HttpGet("unread")]
-        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [CacheControl(CacheDuration.OneMinute, CacheDuration.OneMinute, false)]
         [ProducesResponseType(typeof(SuccessResponse<int>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -592,7 +592,7 @@ namespace AkariApi.Controllers
         /// <param name="mangaId">The manga ID.</param>
         /// <returns>The last read chapter details.</returns>
         [HttpGet("{mangaId}")]
-        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<LastReadResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]

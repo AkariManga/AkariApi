@@ -138,6 +138,7 @@ namespace AkariApi.Controllers
         /// <returns>The user's manga list.</returns>
         [HttpGet("mangalist")]
         [RequireMalTokenRefresh]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<MalMangaListResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -219,6 +220,7 @@ namespace AkariApi.Controllers
         /// <returns>The current user's information.</returns>
         [HttpGet("me")]
         [RequireMalTokenRefresh]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<MalUser>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]

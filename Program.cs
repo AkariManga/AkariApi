@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc.Versioning;
 using Microsoft.AspNetCore.Mvc;
 using AkariApi.Filters;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.ResponseCompression;
+using System.IO.Compression;
 using Analytics;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +16,22 @@ builder.Services.AddControllers().AddJsonOptions(options =>
     options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 builder.Services.AddEndpointsApiExplorer();
+
+// Response compression (gzip)
+builder.Services.AddResponseCompression(options =>
+{
+    options.Providers.Add<GzipCompressionProvider>();
+    options.EnableForHttps = true;
+    // compress common API response types
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[] { "application/json" });
+});
+
+// configure gzip level
+builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+{
+    options.Level = CompressionLevel.Fastest;
+});
+
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v2", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "AkariApi v2", Version = "v2" });
@@ -148,6 +166,10 @@ app.UseSwaggerUI(options =>
 });
 
 app.UseCors("AllowAkari");
+
+// enable gzip compression
+app.UseResponseCompression();
+
 
 bool IsApiKeyValid(HttpContext context)
 {
