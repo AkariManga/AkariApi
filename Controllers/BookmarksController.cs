@@ -61,7 +61,7 @@ namespace AkariApi.Controllers
                             ub.created_at AS bookmark_created_at,
                             ub.updated_at AS bookmark_updated_at,
                             ub.last_read_chapter_id,
-                            ub.chapters_behind,   -- now precomputed
+                            ub.chapters_behind,
                             m.id AS manga_id,
                             m.title,
                             m.cover,
@@ -142,73 +142,80 @@ namespace AkariApi.Controllers
                     {
                         while (await reader.ReadAsync())
                         {
+                            // Note: the CTE returns b.* which includes a couple of
+                            // fields we don't directly map (last_read_chapter_id),
+                            // so we have to skip indices accordingly when building the
+                            // response object.
                             var bookmarkId = reader.GetGuid(0);
                             var bookmark = new BookmarkResponse
                             {
                                 BookmarkId = bookmarkId,
                                 BookmarkCreatedAt = reader.GetDateTime(1),
                                 BookmarkUpdatedAt = reader.GetDateTime(2),
-                                MangaId = reader.GetGuid(3),
-                                Title = reader.GetString(4),
-                                Cover = reader.GetString(5),
-                                Description = reader.GetString(6),
-                                Status = reader.GetString(7),
-                                Type = Enum.Parse<MangaType>(reader.GetString(8), true),
-                                Authors = (string[])reader.GetValue(9),
-                                Genres = (string[])reader.GetValue(10),
-                                Views = (int)(long)reader.GetValue(11),
-                                Score = reader.GetDecimal(12),
-                                MalId = reader.IsDBNull(13) ? null : reader.GetInt32(13),
-                                AniId = reader.IsDBNull(14) ? null : reader.GetInt32(14),
-                                AlternativeTitles = (string[])reader.GetValue(15),
-                                MangaCreatedAt = reader.GetDateTime(16),
-                                MangaUpdatedAt = reader.GetDateTime(17)
+                                // column 3 is last_read_chapter_id, skip it here
+                                MangaId = reader.GetGuid(5),
+                                Title = reader.GetString(6),
+                                Cover = reader.GetString(7),
+                                Description = reader.GetString(8),
+                                Status = reader.GetString(9),
+                                Type = Enum.Parse<MangaType>(reader.GetString(10), true),
+                                Authors = (string[])reader.GetValue(11),
+                                Genres = (string[])reader.GetValue(12),
+                                Views = (int)(long)reader.GetValue(13),
+                                Score = reader.GetDecimal(14),
+                                MalId = reader.IsDBNull(15) ? null : reader.GetInt32(15),
+                                AniId = reader.IsDBNull(16) ? null : reader.GetInt32(16),
+                                AlternativeTitles = (string[])reader.GetValue(17),
+                                MangaCreatedAt = reader.GetDateTime(18),
+                                MangaUpdatedAt = reader.GetDateTime(19)
                             };
 
-                        totalCount = reader.GetInt64(19);
-                        bookmark.ChaptersBehind = reader.GetInt32(20);
+                            // total_count is the 21st column (index 20)
+                            totalCount = reader.GetInt64(20);
+                            // chapters_behind is the 5th column (index 4)
+                            bookmark.ChaptersBehind = reader.GetInt32(4);
 
-                        // Last read chapter
-                        if (!reader.IsDBNull(21))
-                        {
-                            bookmark.LastReadChapter = new BookmarkChapter
+                            // Last read chapter
+                            if (!reader.IsDBNull(21))
                             {
-                                Id = reader.GetGuid(21),
-                                Number = reader.GetFloat(22),
-                                Title = reader.IsDBNull(23) ? string.Empty : reader.GetString(23),
-                                Pages = reader.IsDBNull(24) ? (short)0 : reader.GetInt16(24),
-                                CreatedAt = reader.IsDBNull(25) ? DateTimeOffset.MinValue : reader.GetDateTime(25),
-                                UpdatedAt = reader.IsDBNull(26) ? DateTimeOffset.MinValue : reader.GetDateTime(26)
-                            };
-                        }
+                                bookmark.LastReadChapter = new BookmarkChapter
+                                {
+                                    Id = reader.GetGuid(21),
+                                    Number = reader.GetFloat(22),
+                                    Title = reader.IsDBNull(23) ? string.Empty : reader.GetString(23),
+                                    Pages = reader.IsDBNull(24) ? (short)0 : reader.GetInt16(24),
+                                    CreatedAt = reader.IsDBNull(25) ? DateTimeOffset.MinValue : reader.GetDateTime(25),
+                                    UpdatedAt = reader.IsDBNull(26) ? DateTimeOffset.MinValue : reader.GetDateTime(26)
+                                };
+                            }
 
-                        // Latest chapter
-                        if (!reader.IsDBNull(27))
-                        {
-                            bookmark.LatestChapter = new BookmarkChapter
+                            // Latest chapter
+                            if (!reader.IsDBNull(27))
                             {
-                                Id = reader.GetGuid(27),
-                                Number = reader.GetFloat(28),
-                                Title = reader.IsDBNull(29) ? string.Empty : reader.GetString(29),
-                                Pages = reader.IsDBNull(30) ? (short)0 : reader.GetInt16(30),
-                                CreatedAt = reader.IsDBNull(31) ? DateTimeOffset.MinValue : reader.GetDateTime(31),
-                                UpdatedAt = reader.IsDBNull(32) ? DateTimeOffset.MinValue : reader.GetDateTime(32)
-                            };
-                        }
+                                bookmark.LatestChapter = new BookmarkChapter
+                                {
+                                    Id = reader.GetGuid(27),
+                                    Number = reader.GetFloat(28),
+                                    Title = reader.IsDBNull(29) ? string.Empty : reader.GetString(29),
+                                    Pages = reader.IsDBNull(30) ? (short)0 : reader.GetInt16(30),
+                                    CreatedAt = reader.IsDBNull(31) ? DateTimeOffset.MinValue : reader.GetDateTime(31),
+                                    UpdatedAt = reader.IsDBNull(32) ? DateTimeOffset.MinValue : reader.GetDateTime(32)
+                                };
+                            }
 
-                        // Next chapter
-                        if (!reader.IsDBNull(33))
-                        {
-                            bookmark.NextChapter = new BookmarkChapter
+                            // Next chapter
+                            if (!reader.IsDBNull(33))
                             {
-                                Id = reader.GetGuid(33),
-                                Number = reader.GetFloat(34),
-                                Title = reader.IsDBNull(35) ? string.Empty : reader.GetString(35),
-                                Pages = reader.IsDBNull(36) ? (short)0 : reader.GetInt16(36),
-                                CreatedAt = reader.IsDBNull(37) ? DateTimeOffset.MinValue : reader.GetDateTime(37),
-                                UpdatedAt = reader.IsDBNull(38) ? DateTimeOffset.MinValue : reader.GetDateTime(38)
-                            };
-                        }
+                                bookmark.NextChapter = new BookmarkChapter
+                                {
+                                    Id = reader.GetGuid(33),
+                                    Number = reader.GetFloat(34),
+                                    Title = reader.IsDBNull(35) ? string.Empty : reader.GetString(35),
+                                    Pages = reader.IsDBNull(36) ? (short)0 : reader.GetInt16(36),
+                                    CreatedAt = reader.IsDBNull(37) ? DateTimeOffset.MinValue : reader.GetDateTime(37),
+                                    UpdatedAt = reader.IsDBNull(38) ? DateTimeOffset.MinValue : reader.GetDateTime(38)
+                                };
+                            }
 
                             bookmarks.Add(bookmark);
                         }
