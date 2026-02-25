@@ -609,7 +609,7 @@ END;";
                     var content = await _postgresService.Connection.ExecuteScalarAsync<string?>(query, new
                     {
                         p_manga_id = id,
-                        p_ip = ipAddress,
+                        p_ip = ipAddress.ToString(),
                         p_user_id = userId == null ? (object)DBNull.Value : userId
                     });
 
