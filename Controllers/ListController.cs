@@ -6,6 +6,7 @@ using AkariApi.Helpers;
 using AkariApi.Attributes;
 using Supabase.Postgrest.Exceptions;
 using Npgsql;
+using Dapper;
 
 namespace AkariApi.Controllers
 {
@@ -22,6 +23,22 @@ namespace AkariApi.Controllers
         {
             _supabaseService = supabaseService;
             _postgresService = postgresService;
+        }
+
+        private static UserMangaListEntryResponse MapEntryRow(dynamic r)
+        {
+            return new UserMangaListEntryResponse
+            {
+                Id = (Guid)r.id,
+                ListId = (Guid)r.list_id,
+                MangaId = (Guid)r.manga_id,
+                OrderIndex = (int)r.order_index,
+                CreatedAt = (DateTime)r.created_at,
+                UpdatedAt = (DateTime)r.updated_at,
+                MangaTitle = (string)r.manga_title,
+                MangaCover = (string)r.manga_cover,
+                MangaDescription = (string)r.manga_description
+            };
         }
 
         /// <summary>
@@ -44,7 +61,6 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                // Try to authenticate, but it's optional
                 Guid? currentUserId = null;
                 var (authUserId, authError) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (string.IsNullOrEmpty(authError))
@@ -52,21 +68,12 @@ namespace AkariApi.Controllers
                     currentUserId = authUserId;
                 }
 
-                // If authenticated and requesting own lists, show all, else only public
                 string whereClause = currentUserId == userId ? "WHERE user_id = @userId" : "WHERE user_id = @userId AND is_public = true";
 
-                // Get total count
                 var countQuery = $"SELECT COUNT(*) FROM user_manga_lists {whereClause}";
-                long totalCountLong;
-                using (var countCmd = new NpgsqlCommand(countQuery, _postgresService.Connection))
-                {
-                    countCmd.Parameters.AddWithValue("userId", userId);
-                    var result = await countCmd.ExecuteScalarAsync();
-                    totalCountLong = result != null ? (long)result : 0;
-                }
+                long totalCountLong = await _postgresService.Connection.ExecuteScalarAsync<long>(countQuery, new { userId });
                 int totalCount = totalCountLong > int.MaxValue ? int.MaxValue : (int)totalCountLong;
 
-                // Get paginated results
                 var offset = (clampedPage - 1) * clampedPageSize;
                 var selectQuery = $@"
                     SELECT id, user_id, title, description, is_public, created_at, updated_at, (SELECT COUNT(*) FROM user_manga_list_entries WHERE list_id = user_manga_lists.id) AS total_entries
@@ -74,31 +81,8 @@ namespace AkariApi.Controllers
                     {whereClause}
                     ORDER BY updated_at DESC
                     LIMIT @limit OFFSET @offset";
-                var lists = new List<UserMangaListResponse>();
-                using (var selectCmd = new NpgsqlCommand(selectQuery, _postgresService.Connection))
-                {
-                    selectCmd.Parameters.AddWithValue("userId", userId);
-                    selectCmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    selectCmd.Parameters.AddWithValue("offset", offset);
-                    using (var reader = await selectCmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var list = new UserMangaListResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                UserId = reader.GetGuid(1),
-                                Title = reader.GetString(2),
-                                Description = reader.IsDBNull(3) ? null : reader.GetString(3),
-                                IsPublic = reader.GetBoolean(4),
-                                CreatedAt = reader.GetDateTime(5),
-                                UpdatedAt = reader.GetDateTime(6),
-                                TotalEntries = reader.GetInt32(7)
-                            };
-                            lists.Add(list);
-                        }
-                    }
-                }
+
+                var lists = (await _postgresService.Connection.QueryAsync<UserMangaListResponse>(selectQuery, new { userId, limit = clampedPageSize, offset })).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -134,7 +118,6 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                // Try to authenticate
                 Guid? currentUserId = null;
                 var (authUserId, authError) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (string.IsNullOrEmpty(authError))
@@ -142,41 +125,35 @@ namespace AkariApi.Controllers
                     currentUserId = authUserId;
                 }
 
-                // Get the list, check access
                 var listQuery = "SELECT l.id, l.user_id, l.title, l.description, l.is_public, l.created_at, l.updated_at, u.username, u.display_name, u.role, u.banned FROM user_manga_lists l JOIN profiles u ON l.user_id = u.id WHERE l.id = @id";
+                var listRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(listQuery, new { id });
+
                 UserMangaListWithEntriesResponse? result = null;
-                using (var listCmd = new NpgsqlCommand(listQuery, _postgresService.Connection))
+                if (listRow != null)
                 {
-                    listCmd.Parameters.AddWithValue("id", id);
-                    using (var reader = await listCmd.ExecuteReaderAsync())
+                    var listUserId = (Guid)listRow.user_id;
+                    var isPublic = (bool)listRow.is_public;
+                    if (isPublic || currentUserId == listUserId)
                     {
-                        if (await reader.ReadAsync())
+                        result = new UserMangaListWithEntriesResponse
                         {
-                            var listUserId = reader.GetGuid(1);
-                            var isPublic = reader.GetBoolean(4);
-                            if (isPublic || currentUserId == listUserId)
+                            Id = (Guid)listRow.id,
+                            UserId = listUserId,
+                            Title = (string)listRow.title,
+                            Description = listRow.description == null ? null : (string)listRow.description,
+                            IsPublic = isPublic,
+                            CreatedAt = (DateTime)listRow.created_at,
+                            UpdatedAt = (DateTime)listRow.updated_at,
+                            User = new UserResponse
                             {
-                                result = new UserMangaListWithEntriesResponse
-                                {
-                                    Id = reader.GetGuid(0),
-                                    UserId = listUserId,
-                                    Title = reader.GetString(2),
-                                    Description = reader.IsDBNull(3) ? null : reader.GetString(3),
-                                    IsPublic = isPublic,
-                                    CreatedAt = reader.GetDateTime(5),
-                                    UpdatedAt = reader.GetDateTime(6),
-                                    User = new UserResponse
-                                    {
-                                        UserId = listUserId,
-                                        Username = reader.GetString(7),
-                                        DisplayName = reader.GetString(8),
-                                        Role = (UserRole)Enum.Parse(typeof(UserRole), reader.GetString(9)),
-                                        Banned = reader.GetBoolean(10)
-                                    },
-                                    Entries = new List<UserMangaListEntryResponse>()
-                                };
-                            }
-                        }
+                                UserId = listUserId,
+                                Username = (string)listRow.username,
+                                DisplayName = (string)listRow.display_name,
+                                Role = (UserRole)Enum.Parse(typeof(UserRole), (string)listRow.role),
+                                Banned = (bool)listRow.banned
+                            },
+                            Entries = new List<UserMangaListEntryResponse>()
+                        };
                     }
                 }
 
@@ -186,32 +163,8 @@ namespace AkariApi.Controllers
                     return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
                 }
 
-                // Get all entries for this list
-                var entriesQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.list_id = @listId ORDER BY e.order_index ASC";
-                var entries = new List<UserMangaListEntryResponse>();
-                using (var entriesCmd = new NpgsqlCommand(entriesQuery, _postgresService.Connection))
-                {
-                    entriesCmd.Parameters.AddWithValue("listId", id);
-                    using (var reader = await entriesCmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var entry = new UserMangaListEntryResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                ListId = reader.GetGuid(1),
-                                MangaId = reader.GetGuid(2),
-                                OrderIndex = reader.GetInt32(3),
-                                CreatedAt = reader.GetDateTime(4),
-                                UpdatedAt = reader.GetDateTime(5),
-                                MangaTitle = reader.GetString(6),
-                                MangaCover = reader.GetString(7),
-                                MangaDescription = reader.GetString(8)
-                            };
-                            entries.Add(entry);
-                        }
-                    }
-                }
+                var entriesQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title AS manga_title, m.cover AS manga_cover, m.description AS manga_description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.list_id = @listId ORDER BY e.order_index ASC";
+                var entries = (await _postgresService.Connection.QueryAsync<UserMangaListEntryResponse>(entriesQuery, new { listId = id })).ToList();
 
                 result.Entries = entries;
                 result.TotalEntries = entries.Count;
@@ -253,18 +206,11 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", error));
                 }
 
-                // Get total count
-                var countQuery = "SELECT COUNT(*) FROM user_manga_lists WHERE user_id = @userId";
-                long totalCountLong;
-                using (var countCmd = new NpgsqlCommand(countQuery, _postgresService.Connection))
-                {
-                    countCmd.Parameters.AddWithValue("userId", userId);
-                    var result = await countCmd.ExecuteScalarAsync();
-                    totalCountLong = result != null ? (long)result : 0;
-                }
+                long totalCountLong = await _postgresService.Connection.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(*) FROM user_manga_lists WHERE user_id = @userId",
+                    new { userId });
                 int totalCount = totalCountLong > int.MaxValue ? int.MaxValue : (int)totalCountLong;
 
-                // Get paginated results
                 var offset = (clampedPage - 1) * clampedPageSize;
                 var selectQuery = @"
                     SELECT id, user_id, title, description, is_public, created_at, updated_at, (SELECT COUNT(*) FROM user_manga_list_entries WHERE list_id = user_manga_lists.id) AS total_entries
@@ -272,31 +218,8 @@ namespace AkariApi.Controllers
                     WHERE user_id = @userId
                     ORDER BY updated_at DESC
                     LIMIT @limit OFFSET @offset";
-                var lists = new List<UserMangaListResponse>();
-                using (var selectCmd = new NpgsqlCommand(selectQuery, _postgresService.Connection))
-                {
-                    selectCmd.Parameters.AddWithValue("userId", userId);
-                    selectCmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    selectCmd.Parameters.AddWithValue("offset", offset);
-                    using (var reader = await selectCmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var list = new UserMangaListResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                UserId = reader.GetGuid(1),
-                                Title = reader.GetString(2),
-                                Description = reader.IsDBNull(3) ? null : reader.GetString(3),
-                                IsPublic = reader.GetBoolean(4),
-                                CreatedAt = reader.GetDateTime(5),
-                                UpdatedAt = reader.GetDateTime(6),
-                                TotalEntries = reader.GetInt32(7)
-                            };
-                            lists.Add(list);
-                        }
-                    }
-                }
+
+                var lists = (await _postgresService.Connection.QueryAsync<UserMangaListResponse>(selectQuery, new { userId, limit = clampedPageSize, offset })).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -344,32 +267,24 @@ namespace AkariApi.Controllers
                 }
 
                 var insertQuery = "INSERT INTO user_manga_lists (user_id, title, description, is_public, created_at, updated_at) VALUES (@userId, @title, @description, @isPublic, @createdAt, @updatedAt) RETURNING id, user_id, title, description, is_public, created_at, updated_at";
-                UserMangaListResponse result;
-                using (var cmd = new NpgsqlCommand(insertQuery, _postgresService.Connection))
+                var now = DateTimeOffset.UtcNow;
+                var result = await _postgresService.Connection.QueryFirstOrDefaultAsync<UserMangaListResponse>(insertQuery, new
                 {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("title", request.Title);
-                    cmd.Parameters.AddWithValue("description", request.Description ?? (object)DBNull.Value);
-                    cmd.Parameters.AddWithValue("isPublic", request.IsPublic);
-                    var now = DateTimeOffset.UtcNow;
-                    cmd.Parameters.AddWithValue("createdAt", now);
-                    cmd.Parameters.AddWithValue("updatedAt", now);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        await reader.ReadAsync();
-                        result = new UserMangaListResponse
-                        {
-                            Id = reader.GetGuid(0),
-                            UserId = reader.GetGuid(1),
-                            Title = reader.GetString(2),
-                            Description = reader.IsDBNull(3) ? null : reader.GetString(3),
-                            IsPublic = reader.GetBoolean(4),
-                            CreatedAt = reader.GetDateTime(5),
-                            UpdatedAt = reader.GetDateTime(6),
-                            TotalEntries = 0
-                        };
-                    }
+                    userId,
+                    title = request.Title,
+                    description = request.Description ?? (object)DBNull.Value,
+                    isPublic = request.IsPublic,
+                    createdAt = now,
+                    updatedAt = now
+                });
+
+                if (result == null)
+                {
+                    await _postgresService.CloseAsync();
+                    return StatusCode(500, ErrorResponse.Create("Failed to create list"));
                 }
+
+                result.TotalEntries = 0;
 
                 await _postgresService.CloseAsync();
 
@@ -412,18 +327,9 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", error));
                 }
 
-                // Check if list exists and belongs to user
-                var listQuery = "SELECT user_id FROM user_manga_lists WHERE id = @id";
-                Guid? listOwner = null;
-                using (var listCmd = new NpgsqlCommand(listQuery, _postgresService.Connection))
-                {
-                    listCmd.Parameters.AddWithValue("id", id);
-                    var result = await listCmd.ExecuteScalarAsync();
-                    if (result != null)
-                    {
-                        listOwner = (Guid)result;
-                    }
-                }
+                var listOwner = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(
+                    "SELECT user_id FROM user_manga_lists WHERE id = @id",
+                    new { id });
 
                 if (listOwner == null || listOwner != userId)
                 {
@@ -431,99 +337,53 @@ namespace AkariApi.Controllers
                     return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
                 }
 
-                // Compute next order index (max + 1)
-                var maxIndexQuery = "SELECT COALESCE(MAX(order_index), -1) FROM user_manga_list_entries WHERE list_id = @listId";
-                int nextIndex;
-                using (var maxCmd = new NpgsqlCommand(maxIndexQuery, _postgresService.Connection))
-                {
-                    maxCmd.Parameters.AddWithValue("listId", id);
-                    var result = await maxCmd.ExecuteScalarAsync();
-                    nextIndex = Convert.ToInt32(result) + 1;
-                }
+                var nextIndex = Convert.ToInt32(await _postgresService.Connection.ExecuteScalarAsync<object>(
+                    "SELECT COALESCE(MAX(order_index), -1) FROM user_manga_list_entries WHERE list_id = @listId",
+                    new { listId = id })) + 1;
 
                 try
                 {
-                    // Insert entry
                     var insertQuery = "INSERT INTO user_manga_list_entries (list_id, manga_id, order_index, created_at, updated_at) VALUES (@listId, @mangaId, @orderIndex, @createdAt, @updatedAt) RETURNING id";
-                    Guid entryId;
-                    using (var insertCmd = new NpgsqlCommand(insertQuery, _postgresService.Connection))
+                    var now = DateTimeOffset.UtcNow;
+                    var entryId = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(insertQuery, new
                     {
-                        insertCmd.Parameters.AddWithValue("listId", id);
-                        insertCmd.Parameters.AddWithValue("mangaId", request.MangaId);
-                        insertCmd.Parameters.AddWithValue("orderIndex", nextIndex);
-                        var now = DateTimeOffset.UtcNow;
-                        insertCmd.Parameters.AddWithValue("createdAt", now);
-                        insertCmd.Parameters.AddWithValue("updatedAt", now);
-                        var scalarResult = await insertCmd.ExecuteScalarAsync();
-                        if (scalarResult == null || scalarResult == DBNull.Value)
-                        {
-                            await _postgresService.CloseAsync();
-                            return StatusCode(500, ErrorResponse.Create("Failed to add entry", "Could not retrieve inserted entry ID"));
-                        }
-                        entryId = (Guid)scalarResult;
+                        listId = id,
+                        mangaId = request.MangaId,
+                        orderIndex = nextIndex,
+                        createdAt = now,
+                        updatedAt = now
+                    });
+
+                    if (entryId == null || entryId == Guid.Empty)
+                    {
+                        await _postgresService.CloseAsync();
+                        return StatusCode(500, ErrorResponse.Create("Failed to add entry", "Could not retrieve inserted entry ID"));
                     }
 
-                    // Fetch the created entry with manga data
-                    var selectQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId";
-                    UserMangaListEntryResponse resultEntry;
-                    using (var selectCmd = new NpgsqlCommand(selectQuery, _postgresService.Connection))
+                    var selectQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title AS manga_title, m.cover AS manga_cover, m.description AS manga_description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId";
+                    var entryRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(selectQuery, new { entryId = entryId.Value });
+                    if (entryRow == null)
                     {
-                        selectCmd.Parameters.AddWithValue("entryId", entryId);
-                        using (var reader = await selectCmd.ExecuteReaderAsync())
-                        {
-                            await reader.ReadAsync();
-                            resultEntry = new UserMangaListEntryResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                ListId = reader.GetGuid(1),
-                                MangaId = reader.GetGuid(2),
-                                OrderIndex = reader.GetInt32(3),
-                                CreatedAt = reader.GetDateTime(4),
-                                UpdatedAt = reader.GetDateTime(5),
-                                MangaTitle = reader.GetString(6),
-                                MangaCover = reader.GetString(7),
-                                MangaDescription = reader.GetString(8)
-                            };
-                        }
+                        await _postgresService.CloseAsync();
+                        return StatusCode(500, ErrorResponse.Create("Failed to add entry", "Could not retrieve inserted entry"));
                     }
 
+                    var resultEntry = MapEntryRow(entryRow);
                     await _postgresService.CloseAsync();
 
                     return CreatedAtAction(nameof(GetListWithEntries), new { id }, SuccessResponse<UserMangaListEntryResponse>.Create(resultEntry));
                 }
                 catch (PostgresException ex) when (ex.SqlState == "23505") // unique violation
                 {
-                    // Manga already exists in the list, return the existing entry
-                    var existingQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.list_id = @listId AND e.manga_id = @mangaId";
-                    using (var existingCmd = new NpgsqlCommand(existingQuery, _postgresService.Connection))
+                    var existingQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title AS manga_title, m.cover AS manga_cover, m.description AS manga_description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.list_id = @listId AND e.manga_id = @mangaId";
+                    var existingRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(existingQuery, new { listId = id, mangaId = request.MangaId });
+                    if (existingRow != null)
                     {
-                        existingCmd.Parameters.AddWithValue("listId", id);
-                        existingCmd.Parameters.AddWithValue("mangaId", request.MangaId);
-                        using (var reader = await existingCmd.ExecuteReaderAsync())
-                        {
-                            if (await reader.ReadAsync())
-                            {
-                                var existing = new UserMangaListEntryResponse
-                                {
-                                    Id = reader.GetGuid(0),
-                                    ListId = reader.GetGuid(1),
-                                    MangaId = reader.GetGuid(2),
-                                    OrderIndex = reader.GetInt32(3),
-                                    CreatedAt = reader.GetDateTime(4),
-                                    UpdatedAt = reader.GetDateTime(5),
-                                    MangaTitle = reader.GetString(6),
-                                    MangaCover = reader.GetString(7),
-                                    MangaDescription = reader.GetString(8)
-                                };
-
-                                await _postgresService.CloseAsync();
-
-                                return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(existing));
-                            }
-                        }
+                        var existing = MapEntryRow(existingRow);
+                        await _postgresService.CloseAsync();
+                        return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(existing));
                     }
 
-                    // Should not happen
                     await _postgresService.CloseAsync();
                     return StatusCode(500, ErrorResponse.Create("Failed to add entry", "Unexpected error occurred"));
                 }
@@ -560,41 +420,29 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                // Check if list exists and user owns it
-                using (var cmd = new NpgsqlCommand("SELECT id FROM user_manga_lists WHERE id = @id AND user_id = @userId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("id", id);
-                    cmd.Parameters.AddWithValue("userId", userId);
+                var listExists = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(
+                    "SELECT id FROM user_manga_lists WHERE id = @id AND user_id = @userId",
+                    new { id, userId });
 
-                    var result = await cmd.ExecuteScalarAsync();
-                    if (result == null)
-                    {
-                        await _postgresService.CloseAsync();
-                        return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
-                    }
+                if (listExists == null)
+                {
+                    await _postgresService.CloseAsync();
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
                 }
 
-                // Check if entry exists and belongs to this list
-                using (var cmd = new NpgsqlCommand("SELECT id FROM user_manga_list_entries WHERE id = @entryId AND list_id = @listId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("entryId", entryId);
-                    cmd.Parameters.AddWithValue("listId", id);
+                var entryExists = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(
+                    "SELECT id FROM user_manga_list_entries WHERE id = @entryId AND list_id = @listId",
+                    new { entryId, listId = id });
 
-                    var result = await cmd.ExecuteScalarAsync();
-                    if (result == null)
-                    {
-                        await _postgresService.CloseAsync();
-                        return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list"));
-                    }
+                if (entryExists == null)
+                {
+                    await _postgresService.CloseAsync();
+                    return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list"));
                 }
 
-                // Delete the entry
-                using (var cmd = new NpgsqlCommand("DELETE FROM user_manga_list_entries WHERE id = @entryId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("entryId", entryId);
-
-                    await cmd.ExecuteNonQueryAsync();
-                }
+                await _postgresService.Connection.ExecuteAsync(
+                    "DELETE FROM user_manga_list_entries WHERE id = @entryId",
+                    new { entryId });
 
                 await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Entry removed successfully"));
@@ -638,119 +486,65 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                // Check if list exists and user owns it
-                using (var cmd = new NpgsqlCommand("SELECT id FROM user_manga_lists WHERE id = @id AND user_id = @userId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("id", id);
-                    cmd.Parameters.AddWithValue("userId", userId);
+                var listExists = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(
+                    "SELECT id FROM user_manga_lists WHERE id = @id AND user_id = @userId",
+                    new { id, userId });
 
-                    var result = await cmd.ExecuteScalarAsync();
-                    if (result == null)
-                    {
-                        await _postgresService.CloseAsync();
-                        return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
-                    }
+                if (listExists == null)
+                {
+                    await _postgresService.CloseAsync();
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
                 }
 
-                // Declare variable in outer scope so it's accessible later
-                int currentOrder;
+                var entryRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(
+                    "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title AS manga_title, m.cover AS manga_cover, m.description AS manga_description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId AND e.list_id = @listId",
+                    new { entryId, listId = id });
 
-                // Check if entry exists and belongs to this list
-                using (var cmd = new NpgsqlCommand("SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId AND e.list_id = @listId", _postgresService.Connection))
+                if (entryRow == null)
                 {
-                    cmd.Parameters.AddWithValue("entryId", entryId);
-                    cmd.Parameters.AddWithValue("listId", id);
-
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        if (!await reader.ReadAsync())
-                        {
-                            await _postgresService.CloseAsync();
-                            return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list"));
-                        }
-
-                        currentOrder = reader.GetInt32(3);
-                        var newOrder = request.NewOrderIndex;
-
-                        if (currentOrder == newOrder)
-                        {
-                            // No change needed
-                            var noChangeResult = new UserMangaListEntryResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                ListId = reader.GetGuid(1),
-                                MangaId = reader.GetGuid(2),
-                                OrderIndex = reader.GetInt32(3),
-                                CreatedAt = reader.GetDateTime(4),
-                                UpdatedAt = reader.GetDateTime(5),
-                                MangaTitle = reader.GetString(6),
-                                MangaCover = reader.GetString(7),
-                                MangaDescription = reader.GetString(8)
-                            };
-                            await _postgresService.CloseAsync();
-                            return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(noChangeResult));
-                        }
-                    }
+                    await _postgresService.CloseAsync();
+                    return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list"));
                 }
 
-                // Shift other entries to make room
+                int currentOrder = (int)entryRow.order_index;
+
+                if (currentOrder == request.NewOrderIndex)
+                {
+                    var noChangeResult = MapEntryRow(entryRow);
+                    await _postgresService.CloseAsync();
+                    return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(noChangeResult));
+                }
+
                 if (request.NewOrderIndex > currentOrder)
                 {
-                    // Moving down: decrement order_index for entries between current and new position
-                    using (var cmd = new NpgsqlCommand("UPDATE user_manga_list_entries SET order_index = order_index - 1 WHERE list_id = @listId AND order_index > @currentOrder AND order_index <= @newOrder", _postgresService.Connection))
-                    {
-                        cmd.Parameters.AddWithValue("listId", id);
-                        cmd.Parameters.AddWithValue("currentOrder", currentOrder);
-                        cmd.Parameters.AddWithValue("newOrder", request.NewOrderIndex);
-                        await cmd.ExecuteNonQueryAsync();
-                    }
+                    await _postgresService.Connection.ExecuteAsync(
+                        "UPDATE user_manga_list_entries SET order_index = order_index - 1 WHERE list_id = @listId AND order_index > @currentOrder AND order_index <= @newOrder",
+                        new { listId = id, currentOrder, newOrder = request.NewOrderIndex });
                 }
                 else
                 {
-                    // Moving up: increment order_index for entries between new and current position
-                    using (var cmd = new NpgsqlCommand("UPDATE user_manga_list_entries SET order_index = order_index + 1 WHERE list_id = @listId AND order_index >= @newOrder AND order_index < @currentOrder", _postgresService.Connection))
-                    {
-                        cmd.Parameters.AddWithValue("listId", id);
-                        cmd.Parameters.AddWithValue("newOrder", request.NewOrderIndex);
-                        cmd.Parameters.AddWithValue("currentOrder", currentOrder);
-                        await cmd.ExecuteNonQueryAsync();
-                    }
+                    await _postgresService.Connection.ExecuteAsync(
+                        "UPDATE user_manga_list_entries SET order_index = order_index + 1 WHERE list_id = @listId AND order_index >= @newOrder AND order_index < @currentOrder",
+                        new { listId = id, newOrder = request.NewOrderIndex, currentOrder });
                 }
 
-                // Update the target entry to its new position
-                using (var cmd = new NpgsqlCommand("UPDATE user_manga_list_entries SET order_index = @newOrder, updated_at = NOW() WHERE id = @entryId", _postgresService.Connection))
+                await _postgresService.Connection.ExecuteAsync(
+                    "UPDATE user_manga_list_entries SET order_index = @newOrder, updated_at = NOW() WHERE id = @entryId",
+                    new { newOrder = request.NewOrderIndex, entryId });
+
+                var updatedRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(
+                    "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title AS manga_title, m.cover AS manga_cover, m.description AS manga_description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId",
+                    new { entryId });
+
+                if (updatedRow == null)
                 {
-                    cmd.Parameters.AddWithValue("newOrder", request.NewOrderIndex);
-                    cmd.Parameters.AddWithValue("entryId", entryId);
-                    await cmd.ExecuteNonQueryAsync();
+                    await _postgresService.CloseAsync();
+                    return StatusCode(500, ErrorResponse.Create("Failed to retrieve updated entry"));
                 }
 
-                // Fetch the updated entry
-                using (var cmd = new NpgsqlCommand("SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title, m.cover, m.description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.id = @entryId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("entryId", entryId);
-
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        await reader.ReadAsync();
-
-                        var result = new UserMangaListEntryResponse
-                        {
-                            Id = reader.GetGuid(0),
-                            ListId = reader.GetGuid(1),
-                            MangaId = reader.GetGuid(2),
-                            OrderIndex = reader.GetInt32(3),
-                            CreatedAt = reader.GetDateTime(4),
-                            UpdatedAt = reader.GetDateTime(5),
-                            MangaTitle = reader.GetString(6),
-                            MangaCover = reader.GetString(7),
-                            MangaDescription = reader.GetString(8)
-                        };
-
-                        await _postgresService.CloseAsync();
-                        return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(result));
-                    }
-                }
+                var result = MapEntryRow(updatedRow);
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<UserMangaListEntryResponse>.Create(result));
             }
             catch (Exception ex)
             {
@@ -783,26 +577,19 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                // Check if list exists and user owns it
-                using (var cmd = new NpgsqlCommand("SELECT id FROM user_manga_lists WHERE id = @id AND user_id = @userId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("id", id);
-                    cmd.Parameters.AddWithValue("userId", userId);
+                var listExists = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(
+                    "SELECT id FROM user_manga_lists WHERE id = @id AND user_id = @userId",
+                    new { id, userId });
 
-                    var result = await cmd.ExecuteScalarAsync();
-                    if (result == null)
-                    {
-                        await _postgresService.CloseAsync();
-                        return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
-                    }
+                if (listExists == null)
+                {
+                    await _postgresService.CloseAsync();
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
                 }
 
-                using (var cmd = new NpgsqlCommand("DELETE FROM user_manga_lists WHERE id = @id", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("id", id);
-
-                    await cmd.ExecuteNonQueryAsync();
-                }
+                await _postgresService.Connection.ExecuteAsync(
+                    "DELETE FROM user_manga_lists WHERE id = @id",
+                    new { id });
 
                 await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("List deleted successfully"));
@@ -837,26 +624,14 @@ namespace AkariApi.Controllers
                     return Unauthorized(ErrorResponse.Create("Unauthorized", error));
                 }
 
-                // Get list IDs containing the manga
                 var selectQuery = @"
                     SELECT l.id
                     FROM user_manga_lists l
                     INNER JOIN user_manga_list_entries e ON l.id = e.list_id
                     WHERE l.user_id = @userId AND e.manga_id = @mangaId
                     ORDER BY l.updated_at DESC";
-                var listIds = new List<Guid>();
-                using (var selectCmd = new NpgsqlCommand(selectQuery, _postgresService.Connection))
-                {
-                    selectCmd.Parameters.AddWithValue("userId", userId);
-                    selectCmd.Parameters.AddWithValue("mangaId", mangaId);
-                    using (var reader = await selectCmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            listIds.Add(reader.GetGuid(0));
-                        }
-                    }
-                }
+
+                var listIds = (await _postgresService.Connection.QueryAsync<Guid>(selectQuery, new { userId, mangaId })).ToList();
 
                 await _postgresService.CloseAsync();
 

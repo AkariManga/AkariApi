@@ -4,7 +4,7 @@ using AkariApi.Services;
 using AkariApi.Helpers;
 using Supabase.Gotrue;
 using AkariApi.Attributes;
-using Npgsql;
+using Dapper;
 
 namespace AkariApi.Controllers
 {
@@ -46,10 +46,8 @@ namespace AkariApi.Controllers
 
                 request.UserName = request.UserName.ToLower();
 
-                using var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM profiles WHERE username = @username", _postgresService.Connection);
-                cmd.Parameters.AddWithValue("username", request.UserName);
-                var result = await cmd.ExecuteScalarAsync();
-                var count = result != null ? Convert.ToInt64(result) : 0;
+                var count = await _postgresService.Connection.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(*) FROM profiles WHERE username = @username", new { username = request.UserName });
                 if (count > 0)
                 {
                     await _postgresService.CloseAsync();
@@ -70,11 +68,9 @@ namespace AkariApi.Controllers
 
                 if (session.User != null && !string.IsNullOrEmpty(session.User.Id))
                 {
-                    using var insertCmd = new NpgsqlCommand("INSERT INTO profiles (id, username, display_name) VALUES (@id, @username, @display_name)", _postgresService.Connection);
-                    insertCmd.Parameters.AddWithValue("id", Guid.Parse(session.User.Id));
-                    insertCmd.Parameters.AddWithValue("username", request.UserName);
-                    insertCmd.Parameters.AddWithValue("display_name", request.DisplayName);
-                    await insertCmd.ExecuteNonQueryAsync();
+                    await _postgresService.Connection.ExecuteAsync(
+                        "INSERT INTO profiles (id, username, display_name) VALUES (@id, @username, @display_name)",
+                        new { id = Guid.Parse(session.User.Id), username = request.UserName, display_name = request.DisplayName });
                 }
 
                 if (!string.IsNullOrEmpty(session.AccessToken))
@@ -137,24 +133,15 @@ namespace AkariApi.Controllers
                     return StatusCode(500, ErrorResponse.Create("Failed to sign in", "Invalid user ID format"));
                 }
 
-                // Fetch user profile from profiles table
-                using var cmd = new NpgsqlCommand("SELECT username, display_name, role, banned FROM profiles WHERE id = @id", _postgresService.Connection);
-                cmd.Parameters.AddWithValue("id", userId);
-                using var reader = await cmd.ExecuteReaderAsync();
-                if (!await reader.ReadAsync())
+                var userResponse = await _postgresService.Connection.QueryFirstOrDefaultAsync<UserResponse>(
+                    "SELECT id AS \"UserId\", username, display_name, role, banned FROM profiles WHERE id = @id",
+                    new { id = userId });
+
+                if (userResponse == null)
                 {
                     await _postgresService.CloseAsync();
                     return StatusCode(500, ErrorResponse.Create("Failed to sign in", "Profile not found"));
                 }
-
-                var userResponse = new UserResponse
-                {
-                    UserId = userId,
-                    Username = reader.GetString(0),
-                    DisplayName = reader.GetString(1),
-                    Role = (UserRole)Enum.Parse(typeof(UserRole), reader.GetString(2)),
-                    Banned = reader.GetBoolean(3)
-                };
 
                 if (!string.IsNullOrEmpty(session.AccessToken))
                 {
@@ -190,7 +177,6 @@ namespace AkariApi.Controllers
 
                 await _supabaseService.Client.Auth.SignOut();
 
-                // Reset authentication headers
                 Response.Cookies.Delete("accessToken");
                 Response.Cookies.Delete("refreshToken");
 
@@ -223,24 +209,15 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                // Fetch user profile from profiles table
-                using var cmd = new NpgsqlCommand("SELECT username, display_name, role, banned FROM profiles WHERE id = @id", _postgresService.Connection);
-                cmd.Parameters.AddWithValue("id", userId);
-                using var reader = await cmd.ExecuteReaderAsync();
-                if (!await reader.ReadAsync())
+                var userResponse = await _postgresService.Connection.QueryFirstOrDefaultAsync<UserResponse>(
+                    "SELECT id AS \"UserId\", username, display_name, role, banned FROM profiles WHERE id = @id",
+                    new { id = userId });
+
+                if (userResponse == null)
                 {
                     await _postgresService.CloseAsync();
                     return Unauthorized(ErrorResponse.Create("Unauthorized", "Profile not found"));
                 }
-
-                var userResponse = new UserResponse
-                {
-                    UserId = userId,
-                    Username = reader.GetString(0),
-                    DisplayName = reader.GetString(1),
-                    Role = (UserRole)Enum.Parse(typeof(UserRole), reader.GetString(2)),
-                    Banned = reader.GetBoolean(3)
-                };
 
                 await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<UserResponse>.Create(userResponse));
@@ -268,9 +245,9 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                // Fetch all user data in a single query for efficiency
                 var query = @"
                     SELECT
+                        p.id AS ""UserId"",
                         p.username,
                         p.display_name,
                         p.role,
@@ -311,35 +288,17 @@ namespace AkariApi.Controllers
                     ) l ON p.id = l.user_id
                     WHERE p.id = @id";
 
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                var profileDetails = await _postgresService.Connection.QueryFirstOrDefaultAsync<UserProfileDetailsResponse>(
+                    query, new { id = userId });
+
+                if (profileDetails == null)
                 {
-                    cmd.Parameters.AddWithValue("id", userId);
-                    using var reader = await cmd.ExecuteReaderAsync();
-                    if (!await reader.ReadAsync())
-                    {
-                        await _postgresService.CloseAsync();
-                        return NotFound(ErrorResponse.Create("User not found", status: 404));
-                    }
-
-                    var profileDetails = new UserProfileDetailsResponse
-                    {
-                        UserId = userId,
-                        Username = reader.GetString(0),
-                        DisplayName = reader.GetString(1),
-                        Role = (UserRole)Enum.Parse(typeof(UserRole), reader.GetString(2)),
-                        Banned = reader.GetBoolean(3),
-                        CreatedAt = reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
-                        TotalComments = reader.GetInt64(5),
-                        TotalUpvotes = reader.GetInt64(6),
-                        TotalDownvotes = reader.GetInt64(7),
-                        TotalBookmarks = reader.GetInt64(8),
-                        TotalUploads = reader.GetInt64(9),
-                        TotalLists = reader.GetInt64(10)
-                    };
-
                     await _postgresService.CloseAsync();
-                    return Ok(SuccessResponse<UserProfileDetailsResponse>.Create(profileDetails));
+                    return NotFound(ErrorResponse.Create("User not found", status: 404));
                 }
+
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<UserProfileDetailsResponse>.Create(profileDetails));
             }
             catch (Exception ex)
             {
@@ -377,30 +336,24 @@ namespace AkariApi.Controllers
 
                 request.Username = request.Username.ToLower();
 
-                // Check if username is a UUID
                 if (Guid.TryParse(request.Username, out _))
                 {
                     await _postgresService.CloseAsync();
                     return BadRequest(ErrorResponse.Create("Invalid request", "Username cannot be a UUID"));
                 }
 
-                // Check if username is unique
-                using var checkCmd = new NpgsqlCommand("SELECT COUNT(*) FROM profiles WHERE username = @username AND id != @id", _postgresService.Connection);
-                checkCmd.Parameters.AddWithValue("username", request.Username);
-                checkCmd.Parameters.AddWithValue("id", userId);
-                var count = Convert.ToInt64(await checkCmd.ExecuteScalarAsync());
+                var count = await _postgresService.Connection.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(*) FROM profiles WHERE username = @username AND id != @id",
+                    new { username = request.Username, id = userId });
                 if (count > 0)
                 {
                     await _postgresService.CloseAsync();
                     return BadRequest(ErrorResponse.Create("Invalid request", "Username already taken"));
                 }
 
-                // Update profiles table
-                using var updateCmd = new NpgsqlCommand("UPDATE profiles SET username = @username, display_name = @display_name WHERE id = @id", _postgresService.Connection);
-                updateCmd.Parameters.AddWithValue("username", request.Username);
-                updateCmd.Parameters.AddWithValue("display_name", request.DisplayName);
-                updateCmd.Parameters.AddWithValue("id", userId);
-                await updateCmd.ExecuteNonQueryAsync();
+                await _postgresService.Connection.ExecuteAsync(
+                    "UPDATE profiles SET username = @username, display_name = @display_name WHERE id = @id",
+                    new { username = request.Username, display_name = request.DisplayName, id = userId });
 
                 await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Profile updated successfully"));

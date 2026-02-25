@@ -5,8 +5,7 @@ using AkariApi.Attributes;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
-using Npgsql;
-using NpgsqlTypes;
+using Dapper;
 using System.Collections.Concurrent;
 
 namespace AkariApi.Controllers
@@ -34,6 +33,36 @@ namespace AkariApi.Controllers
         {
             _supabaseService = supabaseService;
             _postgresService = postgresService;
+        }
+
+        private static MangaResponse MapMangaRow(dynamic r)
+        {
+            return new MangaResponse
+            {
+                Id = (Guid)r.id,
+                Title = r.title == null ? "" : (string)r.title,
+                Cover = r.cover == null ? "" : (string)r.cover,
+                Description = r.description == null ? "" : (string)r.description,
+                Status = r.status == null ? "" : (string)r.status,
+                Type = r.type == null ? MangaType.Manga : Enum.Parse<MangaType>((string)r.type, true),
+                Authors = r.authors == null ? Array.Empty<string>() : (string[])r.authors,
+                Genres = r.genres == null ? Array.Empty<string>() : (string[])r.genres,
+                Views = r.view_count == null ? 0 : (r.view_count is long lv ? (lv > int.MaxValue ? int.MaxValue : (int)lv) : (int)r.view_count),
+                Score = r.score == null ? 0m : (decimal)r.score,
+                AlternativeTitles = r.alternative_titles == null ? null : (string[])r.alternative_titles,
+                MalId = r.mal_id == null ? null : (int?)(long)r.mal_id > int.MaxValue ? int.MaxValue : (int?)(long)r.mal_id,
+                AniId = r.ani_id == null ? null : (int?)(long)r.ani_id > int.MaxValue ? int.MaxValue : (int?)(long)r.ani_id,
+                CreatedAt = r.created_at == null ? DateTimeOffset.UtcNow : (DateTimeOffset)(DateTime)r.created_at,
+                UpdatedAt = r.updated_at == null ? DateTimeOffset.UtcNow : (DateTimeOffset)(DateTime)r.updated_at,
+            };
+        }
+
+        private static short GetPagesCount(object? pagesVal)
+        {
+            if (pagesVal is short[] arr) return (short)arr.Length;
+            if (pagesVal is short s) return s;
+            if (pagesVal == null) return 0;
+            return (short)0;
         }
 
         /// <summary>
@@ -74,15 +103,10 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                // tsq CTE computes the tsquery once so it is not re-evaluated in both WHERE and ORDER BY.
-                // total CTE counts matching rows without a window function, letting the planner use an
-                // index-only scan for counting while the outer SELECT benefits from early LIMIT termination.
-                // search_vector and orig_id are excluded from the projection — they are not used by the
-                // C# mapping code and removing them reduces data transferred from Postgres.
                 var listQuery = @"WITH tsq AS (
     SELECT CASE
-        WHEN @p_query IS NOT NULL AND @p_query != ''
-        THEN plainto_tsquery('english', @p_query)
+        WHEN @p_query::text IS NOT NULL AND @p_query::text != ''
+        THEN plainto_tsquery('english', @p_query::text)
         ELSE NULL
     END AS query
 ),
@@ -90,13 +114,13 @@ total AS (
     SELECT COUNT(*) AS cnt
     FROM public.manga m, tsq
     WHERE
-        (@p_genres IS NULL OR @p_genres <@ m.genres)
-        AND (@p_authors IS NULL OR m.authors && @p_authors)
-        AND (@p_excluded_genres IS NULL OR NOT (m.genres && @p_excluded_genres))
-        AND (@p_excluded_authors IS NULL OR NOT (m.authors && @p_excluded_authors))
+        (@p_genres::text[] IS NULL OR @p_genres::text[] <@ m.genres)
+        AND (@p_authors::text[] IS NULL OR m.authors && @p_authors::text[])
+        AND (@p_excluded_genres::text[] IS NULL OR NOT (m.genres && @p_excluded_genres::text[]))
+        AND (@p_excluded_authors::text[] IS NULL OR NOT (m.authors && @p_excluded_authors::text[]))
         AND (tsq.query IS NULL OR m.search_vector @@ tsq.query)
-        AND (@p_type IS NULL OR m.type = ANY(@p_type))
-        AND (@p_excluded_type IS NULL OR m.type <> ALL(@p_excluded_type))
+        AND (@p_type::text[] IS NULL OR m.type = ANY(@p_type::text[]))
+        AND (@p_excluded_type::text[] IS NULL OR m.type <> ALL(@p_excluded_type::text[]))
 )
 SELECT
     m.id,
@@ -117,13 +141,13 @@ SELECT
     total.cnt AS total_count
 FROM public.manga m, tsq, total
 WHERE
-    (@p_genres IS NULL OR @p_genres <@ m.genres)
-    AND (@p_authors IS NULL OR m.authors && @p_authors)
-    AND (@p_excluded_genres IS NULL OR NOT (m.genres && @p_excluded_genres))
-    AND (@p_excluded_authors IS NULL OR NOT (m.authors && @p_excluded_authors))
+    (@p_genres::text[] IS NULL OR @p_genres::text[] <@ m.genres)
+    AND (@p_authors::text[] IS NULL OR m.authors && @p_authors::text[])
+    AND (@p_excluded_genres::text[] IS NULL OR NOT (m.genres && @p_excluded_genres::text[]))
+    AND (@p_excluded_authors::text[] IS NULL OR NOT (m.authors && @p_excluded_authors::text[]))
     AND (tsq.query IS NULL OR m.search_vector @@ tsq.query)
-    AND (@p_type IS NULL OR m.type = ANY(@p_type))
-    AND (@p_excluded_type IS NULL OR m.type <> ALL(@p_excluded_type))
+    AND (@p_type::text[] IS NULL OR m.type = ANY(@p_type::text[]))
+    AND (@p_excluded_type::text[] IS NULL OR m.type <> ALL(@p_excluded_type::text[]))
 ORDER BY
     CASE
         WHEN @p_sort_by = 'popular' THEN m.view_count::float8
@@ -138,63 +162,29 @@ ORDER BY
     END DESC
 LIMIT @p_limit OFFSET @p_offset";
 
+                var dp = new DynamicParameters();
+                dp.Add("p_authors", authors != null && authors.Length > 0 ? authors : null);
+                dp.Add("p_genres", genres != null && genres.Length > 0 ? genres : null);
+                dp.Add("p_type", types != null && types.Length > 0 ? types : null);
+                dp.Add("p_excluded_authors", excludedAuthors != null && excludedAuthors.Length > 0 ? excludedAuthors : null);
+                dp.Add("p_excluded_genres", excludedGenres != null && excludedGenres.Length > 0 ? excludedGenres : null);
+                dp.Add("p_excluded_type", excludedTypes != null && excludedTypes.Length > 0 ? excludedTypes : null);
+                dp.Add("p_limit", clampedPageSize);
+                dp.Add("p_offset", offset);
+                dp.Add("p_sort_by", sortBy.ToString());
+                dp.Add("p_query", string.IsNullOrWhiteSpace(query) ? null : query);
+
+                var rows = await _postgresService.Connection.QueryAsync(listQuery, dp);
                 var mangaList = new List<MangaResponse>();
                 long totalCount = 0;
-                using (var cmd = new NpgsqlCommand(listQuery, _postgresService.Connection))
+
+                foreach (var r in rows)
                 {
-                    var authorsParam = cmd.Parameters.Add("p_authors", NpgsqlDbType.Array | NpgsqlDbType.Text);
-                    authorsParam.Value = authors == null || authors.Length == 0 ? DBNull.Value : authors;
-
-                    var genresParam = cmd.Parameters.Add("p_genres", NpgsqlDbType.Array | NpgsqlDbType.Text);
-                    genresParam.Value = genres == null || genres.Length == 0 ? DBNull.Value : genres;
-
-                    var typeParam = cmd.Parameters.Add("p_type", NpgsqlDbType.Array | NpgsqlDbType.Text);
-                    typeParam.Value = types == null || types.Length == 0 ? DBNull.Value : types;
-
-                    var excludedAuthorsParam = cmd.Parameters.Add("p_excluded_authors", NpgsqlDbType.Array | NpgsqlDbType.Text);
-                    excludedAuthorsParam.Value = excludedAuthors == null || excludedAuthors.Length == 0 ? DBNull.Value : excludedAuthors;
-
-                    var excludedGenresParam = cmd.Parameters.Add("p_excluded_genres", NpgsqlDbType.Array | NpgsqlDbType.Text);
-                    excludedGenresParam.Value = excludedGenres == null || excludedGenres.Length == 0 ? DBNull.Value : excludedGenres;
-
-                    var excludedTypesParam = cmd.Parameters.Add("p_excluded_type", NpgsqlDbType.Array | NpgsqlDbType.Text);
-                    excludedTypesParam.Value = excludedTypes == null || excludedTypes.Length == 0 ? DBNull.Value : excludedTypes;
-
-                    cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
-                    cmd.Parameters.AddWithValue("p_offset", offset);
-                    cmd.Parameters.AddWithValue("p_sort_by", sortBy.ToString());
-
-                    var queryParam = cmd.Parameters.Add("p_query", NpgsqlDbType.Text);
-                    queryParam.Value = string.IsNullOrWhiteSpace(query) ? DBNull.Value : query;
-
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    var manga = MapMangaRow(r);
+                    mangaList.Add(manga);
+                    if (totalCount == 0)
                     {
-                        while (await reader.ReadAsync())
-                        {
-                            var manga = new MangaResponse
-                            {
-                                Id = reader.GetGuid(reader.GetOrdinal("id")),
-                                Title = reader.IsDBNull(reader.GetOrdinal("title")) ? "" : reader.GetString(reader.GetOrdinal("title")),
-                                Cover = reader.IsDBNull(reader.GetOrdinal("cover")) ? "" : reader.GetString(reader.GetOrdinal("cover")),
-                                Description = reader.IsDBNull(reader.GetOrdinal("description")) ? "" : reader.GetString(reader.GetOrdinal("description")),
-                                Status = reader.IsDBNull(reader.GetOrdinal("status")) ? "" : reader.GetString(reader.GetOrdinal("status")),
-                                Type = reader.IsDBNull(reader.GetOrdinal("type")) ? MangaType.Manga : Enum.Parse<MangaType>(reader.GetString(reader.GetOrdinal("type"))),
-                                Authors = reader.IsDBNull(reader.GetOrdinal("authors")) ? Array.Empty<string>() : (string[])reader.GetValue(reader.GetOrdinal("authors")),
-                                Genres = reader.IsDBNull(reader.GetOrdinal("genres")) ? Array.Empty<string>() : (string[])reader.GetValue(reader.GetOrdinal("genres")),
-                                Views = reader.IsDBNull(reader.GetOrdinal("view_count")) ? 0 : (int)reader.GetInt64(reader.GetOrdinal("view_count")),
-                                Score = reader.IsDBNull(reader.GetOrdinal("score")) ? 0m : reader.GetDecimal(reader.GetOrdinal("score")),
-                                AlternativeTitles = reader.IsDBNull(reader.GetOrdinal("alternative_titles")) ? null : (string[])reader.GetValue(reader.GetOrdinal("alternative_titles")),
-                                MalId = reader.IsDBNull(reader.GetOrdinal("mal_id")) ? null : (int?)reader.GetInt64(reader.GetOrdinal("mal_id")),
-                                AniId = reader.IsDBNull(reader.GetOrdinal("ani_id")) ? null : (int?)reader.GetInt64(reader.GetOrdinal("ani_id")),
-                                CreatedAt = reader.IsDBNull(reader.GetOrdinal("created_at")) ? DateTimeOffset.UtcNow : new DateTimeOffset(reader.GetDateTime(reader.GetOrdinal("created_at"))),
-                                UpdatedAt = reader.IsDBNull(reader.GetOrdinal("updated_at")) ? DateTimeOffset.UtcNow : new DateTimeOffset(reader.GetDateTime(reader.GetOrdinal("updated_at"))),
-                            };
-                            mangaList.Add(manga);
-                            if (totalCount == 0)
-                            {
-                                totalCount = reader.GetInt64(reader.GetOrdinal("total_count"));
-                            }
-                        }
+                        totalCount = (long)r.total_count;
                     }
                 }
 
@@ -277,44 +267,17 @@ LIMIT @p_limit OFFSET @p_offset";
                     ORDER BY COUNT(v.id) DESC
                     LIMIT @p_limit OFFSET @p_offset";
 
+                var rows = await _postgresService.Connection.QueryAsync(popularQuery, new { p_days = days, p_limit = clampedPageSize, p_offset = offset });
                 var mangaList = new List<MangaResponse>();
                 long totalCount = 0;
 
-                using (var cmd = new NpgsqlCommand(popularQuery, _postgresService.Connection))
+                foreach (var r in rows)
                 {
-                    cmd.Parameters.AddWithValue("p_days", days);
-                    cmd.Parameters.AddWithValue("p_limit", clampedPageSize);
-                    cmd.Parameters.AddWithValue("p_offset", offset);
-
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    var manga = MapMangaRow(r);
+                    mangaList.Add(manga);
+                    if (totalCount == 0)
                     {
-                        while (await reader.ReadAsync())
-                        {
-                            var manga = new MangaResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(2),
-                                Cover = reader.GetString(3),
-                                Description = reader.GetString(4),
-                                Status = reader.GetString(5),
-                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
-                                Authors = (string[])reader.GetValue(8),
-                                Genres = (string[])reader.GetValue(9),
-                                MalId = reader.IsDBNull(10) ? null : (int?)reader.GetInt64(10),
-                                AniId = reader.IsDBNull(11) ? null : (int?)reader.GetInt64(11),
-                                CreatedAt = reader.GetDateTime(12),
-                                UpdatedAt = reader.GetDateTime(13),
-                                AlternativeTitles = reader.IsDBNull(14) ? null : (string[])reader.GetValue(14),
-                                Score = reader.GetDecimal(15),
-                                Views = reader.GetInt64(16) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(16)
-                            };
-                            mangaList.Add(manga);
-
-                            if (totalCount == 0)
-                            {
-                                totalCount = reader.GetInt64(17);
-                            }
-                        }
+                        totalCount = (long)r.total_count;
                     }
                 }
 
@@ -350,38 +313,11 @@ LIMIT @p_limit OFFSET @p_offset";
                 await _postgresService.OpenAsync();
 
                 var query = @"
-                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.score, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles
+                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count AS ""Views"", m.score, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles
                     FROM manga m
                     WHERE m.id = @id";
-                MangaResponse? manga = null;
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("id", id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        if (await reader.ReadAsync())
-                        {
-                            manga = new MangaResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(1),
-                                Cover = reader.GetString(2),
-                                Description = reader.GetString(3),
-                                Status = reader.GetString(4),
-                                Type = Enum.Parse<MangaType>(reader.GetString(5)),
-                                Authors = (string[])reader.GetValue(6),
-                                Genres = (string[])reader.GetValue(7),
-                                Views = reader.GetInt64(8) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(8),
-                                Score = reader.GetDecimal(9),
-                                MalId = reader.IsDBNull(10) ? null : (reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(10)),
-                                AniId = reader.IsDBNull(11) ? null : (reader.GetInt64(11) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(11)),
-                                CreatedAt = reader.GetDateTime(12),
-                                UpdatedAt = reader.GetDateTime(13),
-                                AlternativeTitles = reader.IsDBNull(14) ? null : (string[])reader.GetValue(14)
-                            };
-                        }
-                    }
-                }
+
+                var manga = await _postgresService.Connection.QueryFirstOrDefaultAsync<MangaResponse>(query, new { id });
 
                 await _postgresService.CloseAsync();
 
@@ -420,44 +356,40 @@ LIMIT @p_limit OFFSET @p_offset";
                     LEFT JOIN chapters c ON m.id = c.manga_id
                     WHERE m.id = @id
                     GROUP BY m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.score, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles";
+
                 MangaDetailResponse? manga = null;
                 List<MangaChapter> chapters = new();
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("id", id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        if (await reader.ReadAsync())
-                        {
-                            manga = new MangaDetailResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(1),
-                                Cover = reader.GetString(2),
-                                Description = reader.GetString(3),
-                                Status = reader.GetString(4),
-                                Type = Enum.Parse<MangaType>(reader.GetString(5)),
-                                Authors = (string[])reader.GetValue(6),
-                                Genres = (string[])reader.GetValue(7),
-                                Views = reader.GetInt64(8) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(8),
-                                Score = reader.GetDecimal(9),
-                                MalId = reader.IsDBNull(10) ? null : (reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(10)),
-                                AniId = reader.IsDBNull(11) ? null : (reader.GetInt64(11) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(11)),
-                                CreatedAt = reader.GetDateTime(12),
-                                UpdatedAt = reader.GetDateTime(13),
-                                AlternativeTitles = reader.IsDBNull(14) ? null : (string[])reader.GetValue(14)
-                            };
 
-                            var chaptersJson = reader.IsDBNull(15) ? "[]" : reader.GetString(15);
-                            try
-                            {
-                                chapters = JsonSerializer.Deserialize<List<MangaChapter>>(chaptersJson, _jsonOptions) ?? new List<MangaChapter>();
-                            }
-                            catch (JsonException)
-                            {
-                                chapters = new List<MangaChapter>();
-                            }
-                        }
+                var row = await _postgresService.Connection.QueryFirstOrDefaultAsync(query, new { id });
+                if (row != null)
+                {
+                    manga = new MangaDetailResponse
+                    {
+                        Id = (Guid)row.id,
+                        Title = (string)row.title,
+                        Cover = (string)row.cover,
+                        Description = (string)row.description,
+                        Status = (string)row.status,
+                        Type = Enum.Parse<MangaType>((string)row.type),
+                        Authors = (string[])row.authors,
+                        Genres = (string[])row.genres,
+                        Views = (long)row.view_count > int.MaxValue ? int.MaxValue : (int)(long)row.view_count,
+                        Score = (decimal)row.score,
+                        MalId = row.mal_id == null ? null : ((long)row.mal_id > int.MaxValue ? int.MaxValue : (int?)(long)row.mal_id),
+                        AniId = row.ani_id == null ? null : ((long)row.ani_id > int.MaxValue ? int.MaxValue : (int?)(long)row.ani_id),
+                        CreatedAt = (DateTime)row.created_at,
+                        UpdatedAt = (DateTime)row.updated_at,
+                        AlternativeTitles = row.alternative_titles == null ? null : (string[])row.alternative_titles
+                    };
+
+                    var chaptersJson = row.chapters_json == null ? "[]" : (string)row.chapters_json;
+                    try
+                    {
+                        chapters = JsonSerializer.Deserialize<List<MangaChapter>>(chaptersJson, _jsonOptions) ?? new List<MangaChapter>();
+                    }
+                    catch (JsonException)
+                    {
+                        chapters = new List<MangaChapter>();
                     }
                 }
 
@@ -493,42 +425,23 @@ LIMIT @p_limit OFFSET @p_offset";
             {
                 await _postgresService.OpenAsync();
 
-                var query = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @id ORDER BY number DESC";
-                var chapters = new List<MangaChapter>();
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("id", id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var pagesValue = reader.GetValue(3);
-                            short pagesCount;
-                            if (pagesValue is short[] pagesArray)
-                            {
-                                pagesCount = (short)pagesArray.Length;
-                            }
-                            else if (pagesValue is short singlePage)
-                            {
-                                pagesCount = singlePage;
-                            }
-                            else
-                            {
-                                pagesCount = 0;
-                            }
+                var rows = await _postgresService.Connection.QueryAsync(
+                    "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @id ORDER BY number DESC",
+                    new { id });
 
-                            chapters.Add(new MangaChapter
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(1),
-                                Number = reader.GetFloat(2),
-                                Pages = pagesCount,
-                                UpdatedAt = reader.GetDateTime(4),
-                                CreatedAt = reader.GetDateTime(5),
-                            });
-                        }
-                    }
-                }
+                var chapters = rows.Select(r =>
+                {
+                    var pagesVal = (object?)r.pages;
+                    return new MangaChapter
+                    {
+                        Id = (Guid)r.id,
+                        Title = (string)r.title,
+                        Number = (float)r.number,
+                        Pages = GetPagesCount(pagesVal),
+                        UpdatedAt = (DateTime)r.updated_at,
+                        CreatedAt = (DateTime)r.created_at,
+                    };
+                }).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -558,60 +471,26 @@ LIMIT @p_limit OFFSET @p_offset";
             {
                 await _postgresService.OpenAsync();
 
-                // Check if manga exists
-                var existsQuery = "SELECT 1 FROM manga WHERE id = @id LIMIT 1";
-                using (var cmd = new NpgsqlCommand(existsQuery, _postgresService.Connection))
+                var exists = await _postgresService.Connection.ExecuteScalarAsync<int?>(
+                    "SELECT 1 FROM manga WHERE id = @id LIMIT 1",
+                    new { id });
+
+                if (exists == null)
                 {
-                    cmd.Parameters.AddWithValue("id", id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        if (!await reader.ReadAsync())
-                        {
-                            await _postgresService.CloseAsync();
-                            return NotFound(ErrorResponse.Create("Manga not found"));
-                        }
-                    }
+                    await _postgresService.CloseAsync();
+                    return NotFound(ErrorResponse.Create("Manga not found"));
                 }
 
                 var query = @"
-                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.score, m.alternative_titles, m.mal_id, m.ani_id, m.created_at, m.updated_at
+                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count AS ""Views"", m.score, m.alternative_titles, m.mal_id, m.ani_id, m.created_at, m.updated_at
                     FROM manga_similarities ms
                     JOIN manga m ON ms.similar_manga_id = m.id
                     WHERE ms.manga_id = @mangaId
                     ORDER BY ms.hybrid_similarity_score DESC
                     LIMIT @limit
                 ";
-                var recommendations = new List<MangaResponse>();
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("mangaId", id);
-                    cmd.Parameters.AddWithValue("limit", limit);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var manga = new MangaResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(1),
-                                Cover = reader.GetString(2),
-                                Description = reader.GetString(3),
-                                Status = reader.GetString(4),
-                                Type = Enum.Parse<MangaType>(reader.GetString(5)),
-                                Authors = reader.GetFieldValue<string[]>(6),
-                                Genres = reader.GetFieldValue<string[]>(7),
-                                Views = reader.GetInt32(8),
-                                Score = reader.GetDecimal(9),
-                                AlternativeTitles = reader.IsDBNull(10) ? null : reader.GetFieldValue<string[]>(10),
-                                MalId = reader.IsDBNull(11) ? null : reader.GetInt32(11),
-                                AniId = reader.IsDBNull(12) ? null : reader.GetInt32(12),
-                                CreatedAt = reader.GetFieldValue<DateTimeOffset>(13),
-                                UpdatedAt = reader.GetFieldValue<DateTimeOffset>(14)
-                            };
-                            recommendations.Add(manga);
-                        }
-                    }
-                }
+
+                var recommendations = (await _postgresService.Connection.QueryAsync<MangaResponse>(query, new { mangaId = id, limit })).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -631,20 +510,18 @@ LIMIT @p_limit OFFSET @p_offset";
                 return true;
             }
 
-            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) // IPv4
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             {
                 var bytes = ip.GetAddressBytes();
-                // Check private ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
                 return bytes[0] == 10 ||
                     (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
                     (bytes[0] == 192 && bytes[1] == 168);
             }
-            else if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6) // IPv6
+            else if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
             {
                 var bytes = ip.GetAddressBytes();
-                // Check for link-local (fe80::/10) and private (fc00::/7)
-                return (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) || // fe80::/10
-                    (bytes[0] == 0xfc || bytes[0] == 0xfd); // fc00::/7
+                return (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
+                    (bytes[0] == 0xfc || bytes[0] == 0xfd);
             }
 
             return false;
@@ -700,7 +577,6 @@ LIMIT @p_limit OFFSET @p_offset";
                 }
             }
 
-            // Acquire semaphore for this IP to prevent concurrent requests
             var semaphore = _ipSemaphores.GetOrAdd(clientIp, _ => new SemaphoreSlim(1, 1));
             await semaphore.WaitAsync();
 
@@ -729,15 +605,13 @@ SELECT CASE
     WHEN (SELECT is_recent FROM recent) THEN 'ignored_recent_view'
     ELSE 'view_logged'
 END;";
-                    string? content;
-                    using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+
+                    var content = await _postgresService.Connection.ExecuteScalarAsync<string?>(query, new
                     {
-                        cmd.Parameters.AddWithValue("p_manga_id", id);
-                        cmd.Parameters.AddWithValue("p_ip", ipAddress);
-                        cmd.Parameters.AddWithValue("p_user_id", userId == null ? DBNull.Value : userId);
-                        var result = await cmd.ExecuteScalarAsync();
-                        content = result?.ToString();
-                    }
+                        p_manga_id = id,
+                        p_ip = ipAddress,
+                        p_user_id = userId == null ? (object)DBNull.Value : userId
+                    });
 
                     await _postgresService.CloseAsync();
 
@@ -798,7 +672,7 @@ SELECT
     m.type,
     m.authors,
     m.genres,
-    m.view_count,
+    m.view_count AS ""Views"",
     m.score,
     m.alternative_titles,
     m.mal_id,
@@ -815,37 +689,7 @@ JOIN public.manga m ON m.id = mv.manga_id
 ORDER BY mv.viewed_at DESC
 LIMIT @p_limit;";
 
-                var mangaList = new List<MangaResponse>();
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("p_user_id", userId);
-                    cmd.Parameters.AddWithValue("p_limit", limit);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var manga = new MangaResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.IsDBNull(1) ? "" : reader.GetString(1),
-                                Cover = reader.IsDBNull(2) ? "" : reader.GetString(2),
-                                Description = reader.IsDBNull(3) ? "" : reader.GetString(3),
-                                Status = reader.IsDBNull(4) ? "" : reader.GetString(4),
-                                Type = reader.IsDBNull(5) ? MangaType.Manga : Enum.Parse<MangaType>(reader.GetString(5)),
-                                Authors = reader.IsDBNull(6) ? Array.Empty<string>() : (string[])reader.GetValue(6),
-                                Genres = reader.IsDBNull(7) ? Array.Empty<string>() : (string[])reader.GetValue(7),
-                                Views = reader.IsDBNull(8) ? 0 : (int)reader.GetInt64(8),
-                                Score = reader.IsDBNull(9) ? 0m : reader.GetDecimal(9),
-                                AlternativeTitles = reader.IsDBNull(10) ? null : (string[])reader.GetValue(10),
-                                MalId = reader.IsDBNull(11) ? null : (int?)reader.GetInt64(11),
-                                AniId = reader.IsDBNull(12) ? null : (int?)reader.GetInt64(12),
-                                CreatedAt = reader.IsDBNull(13) ? DateTimeOffset.UtcNow : new DateTimeOffset(reader.GetDateTime(13)),
-                                UpdatedAt = reader.IsDBNull(14) ? DateTimeOffset.UtcNow : new DateTimeOffset(reader.GetDateTime(14)),
-                            };
-                            mangaList.Add(manga);
-                        }
-                    }
-                }
+                var mangaList = (await _postgresService.Connection.QueryAsync<MangaResponse>(query, new { p_user_id = userId, p_limit = limit })).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -881,14 +725,9 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var query = "INSERT INTO manga_ratings (user_id, manga_id, rating) VALUES (@userId, @mangaId, @rating) ON CONFLICT (user_id, manga_id) DO UPDATE SET rating = EXCLUDED.rating";
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("mangaId", id);
-                    cmd.Parameters.AddWithValue("rating", request.Rating);
-                    await cmd.ExecuteNonQueryAsync();
-                }
+                await _postgresService.Connection.ExecuteAsync(
+                    "INSERT INTO manga_ratings (user_id, manga_id, rating) VALUES (@userId, @mangaId, @rating) ON CONFLICT (user_id, manga_id) DO UPDATE SET rating = EXCLUDED.rating",
+                    new { userId, mangaId = id, rating = request.Rating });
 
                 await _postgresService.CloseAsync();
 
@@ -923,17 +762,14 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var query = "SELECT rating FROM manga_ratings WHERE user_id = @userId AND manga_id = @mangaId";
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("mangaId", id);
-                    var result = await cmd.ExecuteScalarAsync();
-                    await _postgresService.CloseAsync();
+                var result = await _postgresService.Connection.ExecuteScalarAsync<object?>(
+                    "SELECT rating FROM manga_ratings WHERE user_id = @userId AND manga_id = @mangaId",
+                    new { userId, mangaId = id });
 
-                    int? rating = result != null ? (int?)Convert.ToInt32(result) : null;
-                    return Ok(SuccessResponse<int?>.Create(rating));
-                }
+                await _postgresService.CloseAsync();
+
+                int? rating = result != null ? (int?)Convert.ToInt32(result) : null;
+                return Ok(SuccessResponse<int?>.Create(rating));
             }
             catch (Exception ex)
             {
@@ -963,13 +799,9 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var query = "DELETE FROM manga_ratings WHERE user_id = @userId AND manga_id = @mangaId";
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("mangaId", id);
-                    await cmd.ExecuteNonQueryAsync();
-                }
+                await _postgresService.Connection.ExecuteAsync(
+                    "DELETE FROM manga_ratings WHERE user_id = @userId AND manga_id = @mangaId",
+                    new { userId, mangaId = id });
 
                 await _postgresService.CloseAsync();
 
@@ -998,78 +830,51 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                // Get manga
                 var mangaQuery = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE mal_id = @id";
-                MangaDetailResponse? manga = null;
-                using (var cmd = new NpgsqlCommand(mangaQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("id", id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        if (await reader.ReadAsync())
-                        {
-                            manga = new MangaDetailResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(2),
-                                Cover = reader.GetString(3),
-                                Description = reader.GetString(4),
-                                Status = reader.GetString(5),
-                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
-                                Authors = (string[])reader.GetValue(8),
-                                Genres = (string[])reader.GetValue(9),
-                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
-                                Score = reader.GetDecimal(11),
-                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
-                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
-                                CreatedAt = reader.GetDateTime(14),
-                                UpdatedAt = reader.GetDateTime(15),
-                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
-                            };
-                        }
-                    }
-                }
+                var mangaRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(mangaQuery, new { id });
 
-                if (manga == null)
+                if (mangaRow == null)
+                {
+                    await _postgresService.CloseAsync();
                     return NotFound(ErrorResponse.Create("Manga not found", status: 404));
-
-                // Get chapters
-                var chaptersQuery = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number";
-                var chapters = new List<MangaChapter>();
-                using (var cmd = new NpgsqlCommand(chaptersQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("mangaId", manga.Id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var pagesValue = reader.GetValue(3);
-                            short pagesCount;
-                            if (pagesValue is short[] pagesArray)
-                            {
-                                pagesCount = (short)pagesArray.Length;
-                            }
-                            else if (pagesValue is short singlePage)
-                            {
-                                pagesCount = singlePage;
-                            }
-                            else
-                            {
-                                pagesCount = 0;
-                            }
-
-                            chapters.Add(new MangaChapter
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(1),
-                                Number = reader.GetFloat(2),
-                                Pages = pagesCount,
-                                UpdatedAt = reader.GetDateTime(4),
-                                CreatedAt = reader.GetDateTime(5)
-                            });
-                        }
-                    }
                 }
+
+                var manga = new MangaDetailResponse
+                {
+                    Id = (Guid)mangaRow.id,
+                    Title = (string)mangaRow.title,
+                    Cover = (string)mangaRow.cover,
+                    Description = (string)mangaRow.description,
+                    Status = (string)mangaRow.status,
+                    Type = Enum.Parse<MangaType>((string)mangaRow.type),
+                    Authors = (string[])mangaRow.authors,
+                    Genres = (string[])mangaRow.genres,
+                    Views = (long)mangaRow.view_count > int.MaxValue ? int.MaxValue : (int)(long)mangaRow.view_count,
+                    Score = (decimal)mangaRow.score,
+                    MalId = mangaRow.mal_id == null ? null : ((long)mangaRow.mal_id > int.MaxValue ? int.MaxValue : (int?)(long)mangaRow.mal_id),
+                    AniId = mangaRow.ani_id == null ? null : ((long)mangaRow.ani_id > int.MaxValue ? int.MaxValue : (int?)(long)mangaRow.ani_id),
+                    CreatedAt = (DateTime)mangaRow.created_at,
+                    UpdatedAt = (DateTime)mangaRow.updated_at,
+                    AlternativeTitles = mangaRow.alternative_titles == null ? null : (string[])mangaRow.alternative_titles
+                };
+
+                var chapterRows = await _postgresService.Connection.QueryAsync(
+                    "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number",
+                    new { mangaId = manga.Id });
+
+                var chapters = chapterRows.Select(r =>
+                {
+                    var pagesVal = (object?)r.pages;
+                    return new MangaChapter
+                    {
+                        Id = (Guid)r.id,
+                        Title = (string)r.title,
+                        Number = (float)r.number,
+                        Pages = GetPagesCount(pagesVal),
+                        UpdatedAt = (DateTime)r.updated_at,
+                        CreatedAt = (DateTime)r.created_at
+                    };
+                }).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -1110,37 +915,8 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var query = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE mal_id = ANY(@malIds)";
-                var mangaList = new List<MangaResponse>();
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("malIds", request.MalIds);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var manga = new MangaResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(2),
-                                Cover = reader.GetString(3),
-                                Description = reader.GetString(4),
-                                Status = reader.GetString(5),
-                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
-                                Authors = (string[])reader.GetValue(8),
-                                Genres = (string[])reader.GetValue(9),
-                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
-                                Score = reader.GetDecimal(11),
-                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
-                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
-                                CreatedAt = reader.GetDateTime(14),
-                                UpdatedAt = reader.GetDateTime(15),
-                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
-                            };
-                            mangaList.Add(manga);
-                        }
-                    }
-                }
+                var query = "SELECT id, title, cover, description, status, type, authors, genres, view_count AS \"Views\", score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE mal_id = ANY(@malIds)";
+                var mangaList = (await _postgresService.Connection.QueryAsync<MangaResponse>(query, new { malIds = request.MalIds.ToArray() })).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -1169,78 +945,51 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                // Get manga
                 var mangaQuery = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE ani_id = @id";
-                MangaDetailResponse? manga = null;
-                using (var cmd = new NpgsqlCommand(mangaQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("id", id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        if (await reader.ReadAsync())
-                        {
-                            manga = new MangaDetailResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(2),
-                                Cover = reader.GetString(3),
-                                Description = reader.GetString(4),
-                                Status = reader.GetString(5),
-                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
-                                Authors = (string[])reader.GetValue(8),
-                                Genres = (string[])reader.GetValue(9),
-                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
-                                Score = reader.GetDecimal(11),
-                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
-                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
-                                CreatedAt = reader.GetDateTime(14),
-                                UpdatedAt = reader.GetDateTime(15),
-                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
-                            };
-                        }
-                    }
-                }
+                var mangaRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(mangaQuery, new { id });
 
-                if (manga == null)
+                if (mangaRow == null)
+                {
+                    await _postgresService.CloseAsync();
                     return NotFound(ErrorResponse.Create("Manga not found", status: 404));
-
-                // Get chapters
-                var chaptersQuery = "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number";
-                var chapters = new List<MangaChapter>();
-                using (var cmd = new NpgsqlCommand(chaptersQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("mangaId", manga.Id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var pagesValue = reader.GetValue(3);
-                            short pagesCount;
-                            if (pagesValue is short[] pagesArray)
-                            {
-                                pagesCount = (short)pagesArray.Length;
-                            }
-                            else if (pagesValue is short singlePage)
-                            {
-                                pagesCount = singlePage;
-                            }
-                            else
-                            {
-                                pagesCount = 0;
-                            }
-
-                            chapters.Add(new MangaChapter
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(1),
-                                Number = reader.GetFloat(2),
-                                Pages = pagesCount,
-                                UpdatedAt = reader.GetDateTime(4),
-                                CreatedAt = reader.GetDateTime(5)
-                            });
-                        }
-                    }
                 }
+
+                var manga = new MangaDetailResponse
+                {
+                    Id = (Guid)mangaRow.id,
+                    Title = (string)mangaRow.title,
+                    Cover = (string)mangaRow.cover,
+                    Description = (string)mangaRow.description,
+                    Status = (string)mangaRow.status,
+                    Type = Enum.Parse<MangaType>((string)mangaRow.type),
+                    Authors = (string[])mangaRow.authors,
+                    Genres = (string[])mangaRow.genres,
+                    Views = (long)mangaRow.view_count > int.MaxValue ? int.MaxValue : (int)(long)mangaRow.view_count,
+                    Score = (decimal)mangaRow.score,
+                    MalId = mangaRow.mal_id == null ? null : ((long)mangaRow.mal_id > int.MaxValue ? int.MaxValue : (int?)(long)mangaRow.mal_id),
+                    AniId = mangaRow.ani_id == null ? null : ((long)mangaRow.ani_id > int.MaxValue ? int.MaxValue : (int?)(long)mangaRow.ani_id),
+                    CreatedAt = (DateTime)mangaRow.created_at,
+                    UpdatedAt = (DateTime)mangaRow.updated_at,
+                    AlternativeTitles = mangaRow.alternative_titles == null ? null : (string[])mangaRow.alternative_titles
+                };
+
+                var chapterRows = await _postgresService.Connection.QueryAsync(
+                    "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number",
+                    new { mangaId = manga.Id });
+
+                var chapters = chapterRows.Select(r =>
+                {
+                    var pagesVal = (object?)r.pages;
+                    return new MangaChapter
+                    {
+                        Id = (Guid)r.id,
+                        Title = (string)r.title,
+                        Number = (float)r.number,
+                        Pages = GetPagesCount(pagesVal),
+                        UpdatedAt = (DateTime)r.updated_at,
+                        CreatedAt = (DateTime)r.created_at
+                    };
+                }).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -1281,37 +1030,8 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var query = "SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE ani_id = ANY(@aniIds)";
-                var mangaList = new List<MangaResponse>();
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("aniIds", request.AniIds);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var manga = new MangaResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(2),
-                                Cover = reader.GetString(3),
-                                Description = reader.GetString(4),
-                                Status = reader.GetString(5),
-                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
-                                Authors = (string[])reader.GetValue(8),
-                                Genres = (string[])reader.GetValue(9),
-                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),
-                                Score = reader.GetDecimal(11),
-                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
-                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
-                                CreatedAt = reader.GetDateTime(14),
-                                UpdatedAt = reader.GetDateTime(15),
-                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
-                            };
-                            mangaList.Add(manga);
-                        }
-                    }
-                }
+                var query = "SELECT id, title, cover, description, status, type, authors, genres, view_count AS \"Views\", score, mal_id, ani_id, created_at, updated_at, alternative_titles FROM manga WHERE ani_id = ANY(@aniIds)";
+                var mangaList = (await _postgresService.Connection.QueryAsync<MangaResponse>(query, new { aniIds = request.AniIds.ToArray() })).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -1381,23 +1101,8 @@ LIMIT @p_limit;";
                 WHERE c.manga_id = @_manga_id
                     AND c.number = @_number
                 ) t";
-                string? content;
-                using (var cmd = new NpgsqlCommand(rpcQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("_manga_id", id);
-                    cmd.Parameters.AddWithValue("_number", subId);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        if (await reader.ReadAsync())
-                        {
-                            content = reader.IsDBNull(0) ? null : reader.GetString(0);
-                        }
-                        else
-                        {
-                            content = null;
-                        }
-                    }
-                }
+
+                var content = await _postgresService.Connection.ExecuteScalarAsync<string?>(rpcQuery, new { _manga_id = id, _number = subId });
 
                 await _postgresService.CloseAsync();
 
@@ -1452,42 +1157,13 @@ LIMIT @p_limit;";
                 await _postgresService.OpenAsync();
 
                 var searchQuery = @"
-                    SELECT id, title, cover, description, status, type, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles
+                    SELECT id, title, cover, description, status, type, authors, genres, view_count AS ""Views"", score, mal_id, ani_id, created_at, updated_at, alternative_titles
                     FROM manga
                     WHERE search_vector @@ plainto_tsquery('english', @query)
                     ORDER BY (ts_rank(search_vector, plainto_tsquery('english', @query)) + (view_count::float / 100)) DESC
                     LIMIT @limit";
-                var mangaList = new List<MangaSearchResponse>();
-                using (var cmd = new NpgsqlCommand(searchQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("query", query);
-                    cmd.Parameters.AddWithValue("limit", limit);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var manga = new MangaSearchResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(1),
-                                Cover = reader.GetString(2),
-                                Description = reader.GetString(3),
-                                Status = reader.GetString(4),
-                                Type = Enum.Parse<MangaType>(reader.GetString(5)),
-                                Authors = (string[])reader.GetValue(6),
-                                Genres = (string[])reader.GetValue(7),
-                                Views = reader.GetInt64(8) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(8),
-                                Score = reader.GetDecimal(9),
-                                MalId = reader.IsDBNull(10) ? null : (reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(10)),
-                                AniId = reader.IsDBNull(11) ? null : (reader.GetInt64(11) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(11)),
-                                CreatedAt = reader.GetDateTime(12),
-                                UpdatedAt = reader.GetDateTime(13),
-                                AlternativeTitles = reader.IsDBNull(14) ? null : (string[])reader.GetValue(14)
-                            };
-                            mangaList.Add(manga);
-                        }
-                    }
-                }
+
+                var mangaList = (await _postgresService.Connection.QueryAsync<MangaSearchResponse>(searchQuery, new { query, limit })).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -1522,23 +1198,18 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var query = "SELECT id, COUNT(*) OVER() as total FROM manga ORDER BY view_count DESC LIMIT @limit OFFSET @offset";
+                var rows = await _postgresService.Connection.QueryAsync(
+                    "SELECT id, COUNT(*) OVER() as total FROM manga ORDER BY view_count DESC LIMIT @limit OFFSET @offset",
+                    new { limit = clampedPageSize, offset });
+
                 var ids = new List<Guid>();
                 long totalCount = 0;
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                foreach (var r in rows)
                 {
-                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    cmd.Parameters.AddWithValue("offset", offset);
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    ids.Add((Guid)r.id);
+                    if (totalCount == 0)
                     {
-                        while (await reader.ReadAsync())
-                        {
-                            ids.Add(reader.GetGuid(0));
-                            if (totalCount == 0)
-                            {
-                                totalCount = reader.GetInt64(1);
-                            }
-                        }
+                        totalCount = (long)r.total;
                     }
                 }
 
@@ -1595,29 +1266,23 @@ LIMIT @p_limit;";
                         pm.total
                     FROM page_manga pm
                     ORDER BY pm.id";
+
+                var rows = await _postgresService.Connection.QueryAsync(query, new { limit = clampedPageSize, offset });
                 var pairs = new List<MangaChapterIdsPair>();
                 long totalCount = 0;
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+
+                foreach (var r in rows)
                 {
-                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    cmd.Parameters.AddWithValue("offset", offset);
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    var chapterNumbers = r.chapter_numbers == null ? Array.Empty<float>() : (float[])r.chapter_numbers;
+                    if (totalCount == 0)
                     {
-                        while (await reader.ReadAsync())
-                        {
-                            var mangaId = reader.GetGuid(0);
-                            var chapterNumbers = reader.IsDBNull(1) ? Array.Empty<float>() : (float[])reader.GetValue(1);
-                            if (totalCount == 0)
-                            {
-                                totalCount = reader.GetInt64(2);
-                            }
-                            pairs.Add(new MangaChapterIdsPair
-                            {
-                                MangaId = mangaId,
-                                ChapterIds = chapterNumbers.ToList()
-                            });
-                        }
+                        totalCount = (long)r.total;
                     }
+                    pairs.Add(new MangaChapterIdsPair
+                    {
+                        MangaId = (Guid)r.id,
+                        ChapterIds = chapterNumbers.ToList()
+                    });
                 }
 
                 await _postgresService.CloseAsync();

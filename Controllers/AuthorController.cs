@@ -4,7 +4,7 @@ using AkariApi.Services;
 using AkariApi.Attributes;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
-using Npgsql;
+using Dapper;
 
 namespace AkariApi.Controllers
 {
@@ -43,58 +43,20 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                // Get total count
-                var countQuery = "SELECT COUNT(*) FROM manga WHERE @name = ANY(authors)";
-                long totalCountLong;
-                using (var countCmd = new NpgsqlCommand(countQuery, _postgresService.Connection))
-                {
-                    countCmd.Parameters.AddWithValue("name", name);
-                    var result = await countCmd.ExecuteScalarAsync();
-                    totalCountLong = result != null ? (long)result : 0;
-                }
-                // Clamp to int.MaxValue to avoid overflow; adjust as needed
+                long totalCountLong = await _postgresService.Connection.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(*) FROM manga WHERE @name = ANY(authors)", new { name });
                 int totalCount = totalCountLong > int.MaxValue ? int.MaxValue : (int)totalCountLong;
 
-                // Get paginated results
                 var offset = (clampedPage - 1) * clampedPageSize;
                 var selectQuery = @"
-                    SELECT id, orig_id, title, cover, description, status, type, search_vector, authors, genres, view_count, score, mal_id, ani_id, created_at, updated_at, alternative_titles
+                    SELECT id, title, cover, description, status, type, authors, genres, view_count AS ""Views"", score, mal_id, ani_id, created_at, updated_at, alternative_titles
                     FROM manga
                     WHERE @name = ANY(authors)
                     ORDER BY updated_at DESC
                     LIMIT @limit OFFSET @offset";
-                var mangaList = new List<MangaResponse>();
-                using (var selectCmd = new NpgsqlCommand(selectQuery, _postgresService.Connection))
-                {
-                    selectCmd.Parameters.AddWithValue("name", name);
-                    selectCmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    selectCmd.Parameters.AddWithValue("offset", offset);
-                    using (var reader = await selectCmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var manga = new MangaResponse
-                            {
-                                Id = reader.GetGuid(0),
-                                Title = reader.GetString(2),
-                                Cover = reader.GetString(3),
-                                Description = reader.GetString(4),
-                                Status = reader.GetString(5),
-                                Type = Enum.Parse<MangaType>(reader.GetString(6)),
-                                Authors = (string[])reader.GetValue(8),
-                                Genres = (string[])reader.GetValue(9),
-                                Views = reader.GetInt64(10) > int.MaxValue ? int.MaxValue : (int)reader.GetInt64(10),  // Safe cast with clamp
-                                Score = reader.GetDecimal(11),
-                                MalId = reader.IsDBNull(12) ? null : (reader.GetInt64(12) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(12)),
-                                AniId = reader.IsDBNull(13) ? null : (reader.GetInt64(13) > int.MaxValue ? int.MaxValue : (int?)reader.GetInt64(13)),
-                                CreatedAt = reader.GetDateTime(14),
-                                UpdatedAt = reader.GetDateTime(15),
-                                AlternativeTitles = reader.IsDBNull(16) ? null : (string[])reader.GetValue(16)
-                            };
-                            mangaList.Add(manga);
-                        }
-                    }
-                }
+
+                var mangaList = (await _postgresService.Connection.QueryAsync<MangaResponse>(
+                    selectQuery, new { name, limit = clampedPageSize, offset })).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -144,30 +106,17 @@ namespace AkariApi.Controllers
                         ORDER BY manga_count DESC
                         LIMIT @limit OFFSET @offset
                     )
-                    SELECT author, manga_count, total FROM paginated_authors";
-                var authors = new List<AuthorResponse>();
-                long totalCount = 0;
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                    SELECT author AS ""Name"", manga_count AS ""MangaCount"", total FROM paginated_authors";
+
+                var rows = (await _postgresService.Connection.QueryAsync(query, new { limit = clampedPageSize, offset })).ToList();
+
+                var authors = rows.Select(r => new AuthorResponse
                 {
-                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    cmd.Parameters.AddWithValue("offset", offset);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var author = new AuthorResponse
-                            {
-                                Name = reader.GetString(0),
-                                MangaCount = reader.GetInt32(1)
-                            };
-                            if (totalCount == 0)
-                            {
-                                totalCount = reader.GetInt64(2);
-                            }
-                            authors.Add(author);
-                        }
-                    }
-                }
+                    Name = (string)r.Name,
+                    MangaCount = (int)r.MangaCount
+                }).ToList();
+
+                long totalCount = rows.Count > 0 ? (long)rows[0].total : 0;
 
                 await _postgresService.CloseAsync();
 
