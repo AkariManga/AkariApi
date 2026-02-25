@@ -74,15 +74,37 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                var listQuery = @"SELECT
+                // tsq CTE computes the tsquery once so it is not re-evaluated in both WHERE and ORDER BY.
+                // total CTE counts matching rows without a window function, letting the planner use an
+                // index-only scan for counting while the outer SELECT benefits from early LIMIT termination.
+                // search_vector and orig_id are excluded from the projection — they are not used by the
+                // C# mapping code and removing them reduces data transferred from Postgres.
+                var listQuery = @"WITH tsq AS (
+    SELECT CASE
+        WHEN @p_query IS NOT NULL AND @p_query != ''
+        THEN plainto_tsquery('english', @p_query)
+        ELSE NULL
+    END AS query
+),
+total AS (
+    SELECT COUNT(*) AS cnt
+    FROM public.manga m, tsq
+    WHERE
+        (@p_genres IS NULL OR @p_genres <@ m.genres)
+        AND (@p_authors IS NULL OR m.authors && @p_authors)
+        AND (@p_excluded_genres IS NULL OR NOT (m.genres && @p_excluded_genres))
+        AND (@p_excluded_authors IS NULL OR NOT (m.authors && @p_excluded_authors))
+        AND (tsq.query IS NULL OR m.search_vector @@ tsq.query)
+        AND (@p_type IS NULL OR m.type = ANY(@p_type))
+        AND (@p_excluded_type IS NULL OR m.type <> ALL(@p_excluded_type))
+)
+SELECT
     m.id,
-    m.orig_id,
     m.title,
     m.cover,
     m.description,
     m.status,
     m.type,
-    m.search_vector,
     m.authors,
     m.genres,
     m.mal_id,
@@ -92,26 +114,26 @@ namespace AkariApi.Controllers
     m.alternative_titles,
     m.score,
     m.view_count,
-    COUNT(*) OVER() AS total_count
-FROM public.manga m
+    total.cnt AS total_count
+FROM public.manga m, tsq, total
 WHERE
     (@p_genres IS NULL OR @p_genres <@ m.genres)
     AND (@p_authors IS NULL OR m.authors && @p_authors)
     AND (@p_excluded_genres IS NULL OR NOT (m.genres && @p_excluded_genres))
     AND (@p_excluded_authors IS NULL OR NOT (m.authors && @p_excluded_authors))
-    AND (@p_query IS NULL OR @p_query = '' OR m.search_vector @@ plainto_tsquery('english', @p_query))
+    AND (tsq.query IS NULL OR m.search_vector @@ tsq.query)
     AND (@p_type IS NULL OR m.type = ANY(@p_type))
     AND (@p_excluded_type IS NULL OR m.type <> ALL(@p_excluded_type))
 ORDER BY
     CASE
-        WHEN @p_sort_by = 'popular' THEN m.view_count
+        WHEN @p_sort_by = 'popular' THEN m.view_count::float8
         WHEN @p_sort_by = 'latest' THEN EXTRACT(EPOCH FROM m.updated_at)
         WHEN @p_sort_by = 'newest' THEN EXTRACT(EPOCH FROM m.created_at)
         WHEN @p_sort_by = 'search' THEN
             CASE
-                WHEN @p_query IS NOT NULL AND @p_query != '' THEN
-                    ts_rank(m.search_vector, plainto_tsquery('english', @p_query)) + (m.view_count::float / 100)
-                ELSE m.view_count
+                WHEN tsq.query IS NOT NULL THEN
+                    ts_rank(m.search_vector, tsq.query)::float8 + (m.view_count::float8 / 100)
+                ELSE m.view_count::float8
             END
     END DESC
 LIMIT @p_limit OFFSET @p_offset";
