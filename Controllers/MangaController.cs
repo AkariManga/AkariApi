@@ -105,8 +105,8 @@ namespace AkariApi.Controllers
 
                 var listQuery = @"WITH tsq AS (
     SELECT CASE
-        WHEN @p_query IS NOT NULL AND @p_query != ''
-        THEN plainto_tsquery('english', @p_query)
+        WHEN @p_query::text IS NOT NULL AND @p_query::text != ''
+        THEN plainto_tsquery('english', @p_query::text)
         ELSE NULL
     END AS query
 ),
@@ -114,13 +114,13 @@ total AS (
     SELECT COUNT(*) AS cnt
     FROM public.manga m, tsq
     WHERE
-        (@p_genres IS NULL OR @p_genres <@ m.genres)
-        AND (@p_authors IS NULL OR m.authors && @p_authors)
-        AND (@p_excluded_genres IS NULL OR NOT (m.genres && @p_excluded_genres))
-        AND (@p_excluded_authors IS NULL OR NOT (m.authors && @p_excluded_authors))
+        (@p_genres::text[] IS NULL OR @p_genres::text[] <@ m.genres)
+        AND (@p_authors::text[] IS NULL OR m.authors && @p_authors::text[])
+        AND (@p_excluded_genres::text[] IS NULL OR NOT (m.genres && @p_excluded_genres::text[]))
+        AND (@p_excluded_authors::text[] IS NULL OR NOT (m.authors && @p_excluded_authors::text[]))
         AND (tsq.query IS NULL OR m.search_vector @@ tsq.query)
-        AND (@p_type IS NULL OR m.type = ANY(@p_type))
-        AND (@p_excluded_type IS NULL OR m.type <> ALL(@p_excluded_type))
+        AND (@p_type::text[] IS NULL OR m.type = ANY(@p_type::text[]))
+        AND (@p_excluded_type::text[] IS NULL OR m.type <> ALL(@p_excluded_type::text[]))
 )
 SELECT
     m.id,
@@ -141,13 +141,13 @@ SELECT
     total.cnt AS total_count
 FROM public.manga m, tsq, total
 WHERE
-    (@p_genres IS NULL OR @p_genres <@ m.genres)
-    AND (@p_authors IS NULL OR m.authors && @p_authors)
-    AND (@p_excluded_genres IS NULL OR NOT (m.genres && @p_excluded_genres))
-    AND (@p_excluded_authors IS NULL OR NOT (m.authors && @p_excluded_authors))
+    (@p_genres::text[] IS NULL OR @p_genres::text[] <@ m.genres)
+    AND (@p_authors::text[] IS NULL OR m.authors && @p_authors::text[])
+    AND (@p_excluded_genres::text[] IS NULL OR NOT (m.genres && @p_excluded_genres::text[]))
+    AND (@p_excluded_authors::text[] IS NULL OR NOT (m.authors && @p_excluded_authors::text[]))
     AND (tsq.query IS NULL OR m.search_vector @@ tsq.query)
-    AND (@p_type IS NULL OR m.type = ANY(@p_type))
-    AND (@p_excluded_type IS NULL OR m.type <> ALL(@p_excluded_type))
+    AND (@p_type::text[] IS NULL OR m.type = ANY(@p_type::text[]))
+    AND (@p_excluded_type::text[] IS NULL OR m.type <> ALL(@p_excluded_type::text[]))
 ORDER BY
     CASE
         WHEN @p_sort_by = 'popular' THEN m.view_count::float8
