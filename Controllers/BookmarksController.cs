@@ -57,10 +57,12 @@ namespace AkariApi.Controllers
                 var bookmarksQuery = @"
                     WITH base_bookmarks AS (
                         SELECT
-                            ub.id as bookmark_id,
-                            ub.created_at as bookmark_created_at,
-                            ub.updated_at as bookmark_updated_at,
-                            m.id as manga_id,
+                            ub.id AS bookmark_id,
+                            ub.created_at AS bookmark_created_at,
+                            ub.updated_at AS bookmark_updated_at,
+                            ub.last_read_chapter_id,
+                            ub.chapters_behind,   -- now precomputed
+                            m.id AS manga_id,
                             m.title,
                             m.cover,
                             m.description,
@@ -73,72 +75,58 @@ namespace AkariApi.Controllers
                             m.mal_id,
                             m.ani_id,
                             m.alternative_titles,
-                            m.created_at as manga_created_at,
-                            m.updated_at as manga_updated_at,
-                            ub.last_read_chapter_id,
-                            COUNT(*) OVER() as total_count
+                            m.created_at AS manga_created_at,
+                            m.updated_at AS manga_updated_at,
+                            COUNT(*) OVER() AS total_count
                         FROM user_bookmarks ub
                         INNER JOIN manga m ON ub.manga_id = m.id
                         WHERE ub.user_id = @userId
-                    ),
-                    sorted_bookmarks AS (
-                        SELECT
-                            b.*,
-                            COALESCE(
-                                (SELECT COUNT(*)
-                                 FROM chapters c
-                                 WHERE c.manga_id = b.manga_id
-                                 AND c.number > COALESCE((SELECT number FROM chapters WHERE id = b.last_read_chapter_id), 0)),
-                                (SELECT COUNT(*) FROM chapters WHERE manga_id = b.manga_id)
-                            ) as chapters_behind
-                        FROM base_bookmarks b
                     )
                     SELECT
-                        sb.*,
-                        lrc.id as lrc_id,
-                        lrc.number as lrc_number,
-                        lrc.title as lrc_title,
-                        lrc.pages as lrc_pages,
-                        lrc.created_at as lrc_created_at,
-                        lrc.updated_at as lrc_updated_at,
-                        latest.id as latest_id,
-                        latest.number as latest_number,
-                        latest.title as latest_title,
-                        latest.pages as latest_pages,
-                        latest.created_at as latest_created_at,
-                        latest.updated_at as latest_updated_at,
-                        next.id as next_id,
-                        next.number as next_number,
-                        next.title as next_title,
-                        next.pages as next_pages,
-                        next.created_at as next_created_at,
-                        next.updated_at as next_updated_at
-                    FROM sorted_bookmarks sb
-                    LEFT JOIN chapters lrc ON lrc.id = sb.last_read_chapter_id
+                        b.*,
+                        lrc.id AS lrc_id,
+                        lrc.number AS lrc_number,
+                        lrc.title AS lrc_title,
+                        lrc.pages AS lrc_pages,
+                        lrc.created_at AS lrc_created_at,
+                        lrc.updated_at AS lrc_updated_at,
+                        latest.id AS latest_id,
+                        latest.number AS latest_number,
+                        latest.title AS latest_title,
+                        latest.pages AS latest_pages,
+                        latest.created_at AS latest_created_at,
+                        latest.updated_at AS latest_updated_at,
+                        COALESCE(next_greater.id, next_last.id) AS next_id,
+                        COALESCE(next_greater.number, next_last.number) AS next_number,
+                        COALESCE(next_greater.title, next_last.title) AS next_title,
+                        COALESCE(next_greater.pages, next_last.pages) AS next_pages,
+                        COALESCE(next_greater.created_at, next_last.created_at) AS next_created_at,
+                        COALESCE(next_greater.updated_at, next_last.updated_at) AS next_updated_at
+                    FROM base_bookmarks b
+                    LEFT JOIN chapters lrc ON lrc.id = b.last_read_chapter_id
                     LEFT JOIN LATERAL (
                         SELECT id, number, title, pages, created_at, updated_at
                         FROM chapters
-                        WHERE manga_id = sb.manga_id
+                        WHERE manga_id = b.manga_id
                         ORDER BY number DESC, created_at DESC
                         LIMIT 1
                     ) latest ON true
                     LEFT JOIN LATERAL (
                         SELECT id, number, title, pages, created_at, updated_at
                         FROM chapters
-                        WHERE manga_id = sb.manga_id
-                        AND (
-                            CASE
-                                WHEN lrc.number IS NULL OR lrc.number = (SELECT MIN(number) FROM chapters WHERE manga_id = sb.manga_id)
-                                THEN number = (SELECT MIN(number) FROM chapters WHERE manga_id = sb.manga_id)
-                                WHEN lrc.number >= (SELECT MAX(number) FROM chapters WHERE manga_id = sb.manga_id)
-                                THEN number = (SELECT MAX(number) FROM chapters WHERE manga_id = sb.manga_id)
-                                ELSE number > lrc.number
-                            END
-                        )
-                        ORDER BY number ASC, created_at ASC
+                        WHERE manga_id = b.manga_id
+                        AND number > COALESCE(lrc.number, -1)
+                        ORDER BY number ASC
                         LIMIT 1
-                    ) next ON true
-                    ORDER BY (sb.chapters_behind > 0) DESC, sb.manga_updated_at DESC
+                    ) next_greater ON true
+                    LEFT JOIN LATERAL (
+                        SELECT id, number, title, pages, created_at, updated_at
+                        FROM chapters
+                        WHERE manga_id = b.manga_id
+                        ORDER BY number DESC
+                        LIMIT 1
+                    ) next_last ON true
+                    ORDER BY (b.chapters_behind > 0) DESC, b.manga_updated_at DESC
                     LIMIT @limit OFFSET @offset";
 
                 var bookmarks = new List<BookmarkResponse>();
