@@ -52,7 +52,6 @@ namespace AkariApi.Controllers
         [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes, false)]
         [ProducesResponseType(typeof(SuccessResponse<UserMangaListPaginatedResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [OptionalTokenRefresh]
         public async Task<IActionResult> GetUserLists(Guid userId, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
@@ -111,7 +110,6 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<UserMangaListWithEntriesResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        [OptionalTokenRefresh]
         public async Task<IActionResult> GetListWithEntries(Guid id)
         {
             try
