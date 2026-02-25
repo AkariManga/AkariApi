@@ -592,12 +592,12 @@ WITH recent AS (
         SELECT 1
         FROM public.manga_views
         WHERE manga_id = @p_manga_id
-          AND ip = @p_ip
+          AND ip = @p_ip::inet
           AND viewed_at > now() - interval '24 hours'
     ) AS is_recent
 ), ins AS (
     INSERT INTO public.manga_views (manga_id, ip, user_id)
-    SELECT @p_manga_id, @p_ip, @p_user_id
+    SELECT @p_manga_id, @p_ip::inet, @p_user_id
     WHERE NOT (SELECT is_recent FROM recent)
     RETURNING 1
 )
