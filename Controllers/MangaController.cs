@@ -815,6 +815,52 @@ LIMIT @p_limit;";
         }
 
         /// <summary>
+        /// Batch rate multiple manga
+        /// </summary>
+        /// <param name="request">The request containing manga IDs and their ratings.</param>
+        /// <returns>A success message.</returns>
+        [HttpPost("rate/batch")]
+        [ProducesResponseType(typeof(SuccessResponse<string>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> BatchRateManga([FromBody] BatchRateMangaRequest request)
+        {
+            if (request.Ratings == null || !request.Ratings.Any())
+                return BadRequest(ErrorResponse.Create("At least one rating entry is required"));
+
+            if (request.Ratings.Count > 50)
+                return BadRequest(ErrorResponse.Create("Cannot rate more than 50 manga at once"));
+
+            var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+            if (!string.IsNullOrEmpty(errorMessage))
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var mangaIds = request.Ratings.Select(r => r.MangaId).ToArray();
+                var ratings = request.Ratings.Select(r => r.Rating).ToArray();
+
+                await _postgresService.Connection.ExecuteAsync(@"
+                    INSERT INTO manga_ratings (user_id, manga_id, rating)
+                    SELECT @userId, unnest(@mangaIds::uuid[]), unnest(@ratings::int[])
+                    ON CONFLICT (user_id, manga_id) DO UPDATE SET rating = EXCLUDED.rating",
+                    new { userId, mangaIds, ratings });
+
+                await _postgresService.CloseAsync();
+
+                return Ok(SuccessResponse<string>.Create($"{request.Ratings.Count} rating(s) submitted successfully"));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to submit ratings", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Get manga by MAL ID
         /// </summary>
         /// <param name="id">The MyAnimeList ID of the manga.</param>

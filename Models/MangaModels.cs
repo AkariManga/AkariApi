@@ -185,6 +185,24 @@ namespace AkariApi.Models
         public required int Rating { get; set; }
     }
 
+    public class BatchRateMangaItem
+    {
+        [Required]
+        public required Guid MangaId { get; set; }
+
+        [Required]
+        [Range(1, 10)]
+        public required int Rating { get; set; }
+    }
+
+    public class BatchRateMangaRequest
+    {
+        [Required]
+        [MinLength(1)]
+        [MaxLength(50)]
+        public required List<BatchRateMangaItem> Ratings { get; set; } = new List<BatchRateMangaItem>();
+    }
+
     public class ViewMangaRequest
     {
         public bool SaveUserId { get; set; } = false;
