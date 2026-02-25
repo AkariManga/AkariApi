@@ -3,7 +3,7 @@ using AkariApi.Models;
 using AkariApi.Services;
 using AkariApi.Attributes;
 using AkariApi.Helpers;
-using Npgsql;
+using Dapper;
 using Microsoft.Extensions.Configuration;
 
 namespace AkariApi.Controllers
@@ -62,15 +62,15 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                using (var cmd = new NpgsqlCommand("INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (@userId, @endpoint, @p256dh, @auth)", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("endpoint", request.Endpoint);
-                    cmd.Parameters.AddWithValue("p256dh", EncryptionHelper.Encrypt(request.P256dh, encryptionKey));
-                    cmd.Parameters.AddWithValue("auth", EncryptionHelper.Encrypt(request.Auth, encryptionKey));
-
-                    await cmd.ExecuteNonQueryAsync();
-                }
+                await _postgresService.Connection.ExecuteAsync(
+                    "INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (@userId, @endpoint, @p256dh, @auth)",
+                    new
+                    {
+                        userId,
+                        endpoint = request.Endpoint,
+                        p256dh = EncryptionHelper.Encrypt(request.P256dh, encryptionKey),
+                        auth = EncryptionHelper.Encrypt(request.Auth, encryptionKey)
+                    });
 
                 await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Subscribed successfully"));

@@ -1,3 +1,5 @@
+using AkariApi.Helpers;
+using Dapper;
 using Supabase;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -144,6 +146,12 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+SqlMapper.AddTypeHandler(new StringArrayTypeHandler());
+SqlMapper.AddTypeHandler(new NullableStringArrayTypeHandler());
+SqlMapper.AddTypeHandler(new MangaTypeHandler());
+SqlMapper.AddTypeHandler(new UserRoleHandler());
+DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 app.UseSwagger(options =>
 {

@@ -4,8 +4,7 @@ using AkariApi.Services;
 using AkariApi.Attributes;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
-using Npgsql;
-using System.Linq;
+using Dapper;
 
 namespace AkariApi.Controllers
 {
@@ -22,6 +21,37 @@ namespace AkariApi.Controllers
         {
             _supabaseService = supabaseService;
             _postgresService = postgresService;
+        }
+
+        private static BookmarkResponse MapBookmarkRow(dynamic r, ref long totalCount)
+        {
+            var bookmark = new BookmarkResponse
+            {
+                BookmarkId = (Guid)r.bookmark_id,
+                BookmarkCreatedAt = (DateTime)r.bookmark_created_at,
+                BookmarkUpdatedAt = (DateTime)r.bookmark_updated_at,
+                MangaId = (Guid)r.manga_id,
+                Title = (string)r.title,
+                Cover = (string)r.cover,
+                Description = (string)r.description,
+                Status = (string)r.status,
+                Type = Enum.Parse<MangaType>((string)r.type, true),
+                Authors = (string[])r.authors,
+                Genres = (string[])r.genres,
+                Views = (int)(long)r.view_count,
+                Score = (decimal)r.score,
+                MalId = r.mal_id == null ? (int?)null : (int)r.mal_id,
+                AniId = r.ani_id == null ? (int?)null : (int)r.ani_id,
+                AlternativeTitles = r.alternative_titles == null ? Array.Empty<string>() : (string[])r.alternative_titles,
+                MangaCreatedAt = (DateTime)r.manga_created_at,
+                MangaUpdatedAt = (DateTime)r.manga_updated_at,
+                ChaptersBehind = (int)r.chapters_behind
+            };
+            totalCount = (long)r.total_count;
+            if (r.lrc_id != null) bookmark.LastReadChapter = new BookmarkChapter { Id = (Guid)r.lrc_id, Number = (float)r.lrc_number, Title = r.lrc_title == null ? string.Empty : (string)r.lrc_title, Pages = r.lrc_pages == null ? (short)0 : (short)r.lrc_pages, CreatedAt = r.lrc_created_at == null ? DateTimeOffset.MinValue : (DateTime)r.lrc_created_at, UpdatedAt = r.lrc_updated_at == null ? DateTimeOffset.MinValue : (DateTime)r.lrc_updated_at };
+            if (r.latest_id != null) bookmark.LatestChapter = new BookmarkChapter { Id = (Guid)r.latest_id, Number = (float)r.latest_number, Title = r.latest_title == null ? string.Empty : (string)r.latest_title, Pages = r.latest_pages == null ? (short)0 : (short)r.latest_pages, CreatedAt = r.latest_created_at == null ? DateTimeOffset.MinValue : (DateTime)r.latest_created_at, UpdatedAt = r.latest_updated_at == null ? DateTimeOffset.MinValue : (DateTime)r.latest_updated_at };
+            if (r.next_id != null) bookmark.NextChapter = new BookmarkChapter { Id = (Guid)r.next_id, Number = (float)r.next_number, Title = r.next_title == null ? string.Empty : (string)r.next_title, Pages = r.next_pages == null ? (short)0 : (short)r.next_pages, CreatedAt = r.next_created_at == null ? DateTimeOffset.MinValue : (DateTime)r.next_created_at, UpdatedAt = r.next_updated_at == null ? DateTimeOffset.MinValue : (DateTime)r.next_updated_at };
+            return bookmark;
         }
 
         /// <summary>
@@ -53,7 +83,6 @@ namespace AkariApi.Controllers
 
                 var offset = (clampedPage - 1) * clampedPageSize;
 
-                // Get everything in a single query with LATERAL joins
                 var bookmarksQuery = @"
                     WITH base_bookmarks AS (
                         SELECT
@@ -132,94 +161,10 @@ namespace AkariApi.Controllers
                 var bookmarks = new List<BookmarkResponse>();
                 long totalCount = 0;
 
-                using (var cmd = new NpgsqlCommand(bookmarksQuery, _postgresService.Connection))
+                var rows = await _postgresService.Connection.QueryAsync(bookmarksQuery, new { userId, limit = clampedPageSize, offset });
+                foreach (var r in rows)
                 {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    cmd.Parameters.AddWithValue("offset", offset);
-
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            // Note: the CTE returns b.* which includes a couple of
-                            // fields we don't directly map (last_read_chapter_id),
-                            // so we have to skip indices accordingly when building the
-                            // response object.
-                            var bookmarkId = reader.GetGuid(0);
-                            var bookmark = new BookmarkResponse
-                            {
-                                BookmarkId = bookmarkId,
-                                BookmarkCreatedAt = reader.GetDateTime(1),
-                                BookmarkUpdatedAt = reader.GetDateTime(2),
-                                // column 3 is last_read_chapter_id, skip it here
-                                MangaId = reader.GetGuid(5),
-                                Title = reader.GetString(6),
-                                Cover = reader.GetString(7),
-                                Description = reader.GetString(8),
-                                Status = reader.GetString(9),
-                                Type = Enum.Parse<MangaType>(reader.GetString(10), true),
-                                Authors = (string[])reader.GetValue(11),
-                                Genres = (string[])reader.GetValue(12),
-                                Views = (int)(long)reader.GetValue(13),
-                                Score = reader.GetDecimal(14),
-                                MalId = reader.IsDBNull(15) ? null : reader.GetInt32(15),
-                                AniId = reader.IsDBNull(16) ? null : reader.GetInt32(16),
-                                AlternativeTitles = (string[])reader.GetValue(17),
-                                MangaCreatedAt = reader.GetDateTime(18),
-                                MangaUpdatedAt = reader.GetDateTime(19)
-                            };
-
-                            // total_count is the 21st column (index 20)
-                            totalCount = reader.GetInt64(20);
-                            // chapters_behind is the 5th column (index 4)
-                            bookmark.ChaptersBehind = reader.GetInt32(4);
-
-                            // Last read chapter
-                            if (!reader.IsDBNull(21))
-                            {
-                                bookmark.LastReadChapter = new BookmarkChapter
-                                {
-                                    Id = reader.GetGuid(21),
-                                    Number = reader.GetFloat(22),
-                                    Title = reader.IsDBNull(23) ? string.Empty : reader.GetString(23),
-                                    Pages = reader.IsDBNull(24) ? (short)0 : reader.GetInt16(24),
-                                    CreatedAt = reader.IsDBNull(25) ? DateTimeOffset.MinValue : reader.GetDateTime(25),
-                                    UpdatedAt = reader.IsDBNull(26) ? DateTimeOffset.MinValue : reader.GetDateTime(26)
-                                };
-                            }
-
-                            // Latest chapter
-                            if (!reader.IsDBNull(27))
-                            {
-                                bookmark.LatestChapter = new BookmarkChapter
-                                {
-                                    Id = reader.GetGuid(27),
-                                    Number = reader.GetFloat(28),
-                                    Title = reader.IsDBNull(29) ? string.Empty : reader.GetString(29),
-                                    Pages = reader.IsDBNull(30) ? (short)0 : reader.GetInt16(30),
-                                    CreatedAt = reader.IsDBNull(31) ? DateTimeOffset.MinValue : reader.GetDateTime(31),
-                                    UpdatedAt = reader.IsDBNull(32) ? DateTimeOffset.MinValue : reader.GetDateTime(32)
-                                };
-                            }
-
-                            // Next chapter
-                            if (!reader.IsDBNull(33))
-                            {
-                                bookmark.NextChapter = new BookmarkChapter
-                                {
-                                    Id = reader.GetGuid(33),
-                                    Number = reader.GetFloat(34),
-                                    Title = reader.IsDBNull(35) ? string.Empty : reader.GetString(35),
-                                    Pages = reader.IsDBNull(36) ? (short)0 : reader.GetInt16(36),
-                                    CreatedAt = reader.IsDBNull(37) ? DateTimeOffset.MinValue : reader.GetDateTime(37),
-                                    UpdatedAt = reader.IsDBNull(38) ? DateTimeOffset.MinValue : reader.GetDateTime(38)
-                                };
-                            }
-
-                            bookmarks.Add(bookmark);
-                        }
-                    }
+                    bookmarks.Add(MapBookmarkRow(r, ref totalCount));
                 }
 
                 await _postgresService.CloseAsync();
@@ -274,7 +219,6 @@ namespace AkariApi.Controllers
 
                 var offset = (clampedPage - 1) * clampedPageSize;
 
-                // Get everything in a single query with LATERAL joins
                 var searchQuery = @"
                     SELECT
                         ub.id as bookmark_id,
@@ -355,88 +299,10 @@ namespace AkariApi.Controllers
                 var bookmarks = new List<BookmarkResponse>();
                 long totalCount = 0;
 
-                using (var cmd = new NpgsqlCommand(searchQuery, _postgresService.Connection))
+                var rows = await _postgresService.Connection.QueryAsync(searchQuery, new { userId, query, limit = clampedPageSize, offset });
+                foreach (var r in rows)
                 {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("query", query);
-                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    cmd.Parameters.AddWithValue("offset", offset);
-
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            var bookmarkId = reader.GetGuid(0);
-                            var bookmark = new BookmarkResponse
-                            {
-                                BookmarkId = bookmarkId,
-                                BookmarkCreatedAt = reader.GetDateTime(1),
-                                BookmarkUpdatedAt = reader.GetDateTime(2),
-                                MangaId = reader.GetGuid(3),
-                                Title = reader.GetString(4),
-                                Cover = reader.GetString(5),
-                                Description = reader.GetString(6),
-                                Status = reader.GetString(7),
-                                Type = Enum.Parse<MangaType>(reader.GetString(8), true),
-                                Authors = (string[])reader.GetValue(9),
-                                Genres = (string[])reader.GetValue(10),
-                                Views = (int)(long)reader.GetValue(11),
-                                Score = reader.GetDecimal(12),
-                                MalId = reader.IsDBNull(13) ? null : reader.GetInt32(13),
-                                AniId = reader.IsDBNull(14) ? null : reader.GetInt32(14),
-                                AlternativeTitles = (string[])reader.GetValue(15),
-                                MangaCreatedAt = reader.GetDateTime(16),
-                                MangaUpdatedAt = reader.GetDateTime(17)
-                            };
-
-                            totalCount = reader.GetInt64(18);
-                            bookmark.ChaptersBehind = reader.GetInt32(19);
-
-                            // Last read chapter
-                            if (!reader.IsDBNull(20))
-                            {
-                                bookmark.LastReadChapter = new BookmarkChapter
-                                {
-                                    Id = reader.GetGuid(20),
-                                    Number = reader.GetFloat(21),
-                                    Title = reader.IsDBNull(22) ? string.Empty : reader.GetString(22),
-                                    Pages = reader.IsDBNull(23) ? (short)0 : reader.GetInt16(23),
-                                    CreatedAt = reader.IsDBNull(24) ? DateTimeOffset.MinValue : reader.GetDateTime(24),
-                                    UpdatedAt = reader.IsDBNull(25) ? DateTimeOffset.MinValue : reader.GetDateTime(25)
-                                };
-                            }
-
-                            // Latest chapter
-                            if (!reader.IsDBNull(26))
-                            {
-                                bookmark.LatestChapter = new BookmarkChapter
-                                {
-                                    Id = reader.GetGuid(26),
-                                    Number = reader.GetFloat(27),
-                                    Title = reader.IsDBNull(28) ? string.Empty : reader.GetString(28),
-                                    Pages = reader.IsDBNull(29) ? (short)0 : reader.GetInt16(29),
-                                    CreatedAt = reader.IsDBNull(30) ? DateTimeOffset.MinValue : reader.GetDateTime(30),
-                                    UpdatedAt = reader.IsDBNull(31) ? DateTimeOffset.MinValue : reader.GetDateTime(31)
-                                };
-                            }
-
-                            // Next chapter
-                            if (!reader.IsDBNull(32))
-                            {
-                                bookmark.NextChapter = new BookmarkChapter
-                                {
-                                    Id = reader.GetGuid(32),
-                                    Number = reader.GetFloat(33),
-                                    Title = reader.IsDBNull(34) ? string.Empty : reader.GetString(34),
-                                    Pages = reader.IsDBNull(35) ? (short)0 : reader.GetInt16(35),
-                                    CreatedAt = reader.IsDBNull(36) ? DateTimeOffset.MinValue : reader.GetDateTime(36),
-                                    UpdatedAt = reader.IsDBNull(37) ? DateTimeOffset.MinValue : reader.GetDateTime(37)
-                                };
-                            }
-
-                            bookmarks.Add(bookmark);
-                        }
-                    }
+                    bookmarks.Add(MapBookmarkRow(r, ref totalCount));
                 }
 
                 await _postgresService.CloseAsync();
@@ -479,16 +345,12 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM user_bookmarks_unread WHERE user_id = @userId", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
+                var count = await _postgresService.Connection.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(*) FROM user_bookmarks_unread WHERE user_id = @userId",
+                    new { userId });
 
-                    var result = await cmd.ExecuteScalarAsync();
-                    var count = result != null ? (long)result : 0;
-
-                    await _postgresService.CloseAsync();
-                    return Ok(SuccessResponse<int>.Create((int)count));
-                }
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<int>.Create((int)count));
             }
             catch (Exception ex)
             {
@@ -522,13 +384,11 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                // Get the chapter ID - either by number or the first chapter if not specified
                 Guid? chapterId = null;
                 string chapterQuery;
 
                 if (request.ChapterNumber.HasValue)
                 {
-                    // Use epsilon comparison for floating point numbers to handle precision issues
                     chapterQuery = "SELECT id FROM chapters WHERE manga_id = @mangaId AND ABS(number - @chapterNumber) < 0.0001 LIMIT 1";
                 }
                 else
@@ -536,40 +396,27 @@ namespace AkariApi.Controllers
                     chapterQuery = "SELECT id FROM chapters WHERE manga_id = @mangaId ORDER BY number ASC LIMIT 1";
                 }
 
-                using (var cmd = new NpgsqlCommand(chapterQuery, _postgresService.Connection))
+                chapterId = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(chapterQuery, new
                 {
-                    cmd.Parameters.AddWithValue("mangaId", mangaId);
-                    if (request.ChapterNumber.HasValue)
-                    {
-                        cmd.Parameters.AddWithValue("chapterNumber", request.ChapterNumber.Value);
-                    }
+                    mangaId,
+                    chapterNumber = request.ChapterNumber.HasValue ? request.ChapterNumber.Value : (double?)null
+                });
 
-                    var result = await cmd.ExecuteScalarAsync();
-                    if (result == null)
-                    {
-                        await _postgresService.CloseAsync();
-                        return BadRequest(ErrorResponse.Create("Bad Request", request.ChapterNumber.HasValue
-                            ? $"Chapter {request.ChapterNumber.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} not found for this manga"
-                            : "No chapters found for this manga"));
-                    }
-                    chapterId = (Guid)result;
+                if (chapterId == null)
+                {
+                    await _postgresService.CloseAsync();
+                    return BadRequest(ErrorResponse.Create("Bad Request", request.ChapterNumber.HasValue
+                        ? $"Chapter {request.ChapterNumber.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} not found for this manga"
+                        : "No chapters found for this manga"));
                 }
 
-                // Upsert the bookmark
                 var upsertQuery = @"
                     INSERT INTO user_bookmarks (user_id, manga_id, last_read_chapter_id, updated_at, created_at)
                     VALUES (@userId, @mangaId, @chapterId, NOW(), NOW())
                     ON CONFLICT (user_id, manga_id)
                     DO UPDATE SET last_read_chapter_id = @chapterId, updated_at = NOW()";
 
-                using (var cmd = new NpgsqlCommand(upsertQuery, _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("mangaId", mangaId);
-                    cmd.Parameters.AddWithValue("chapterId", chapterId.Value);
-
-                    await cmd.ExecuteNonQueryAsync();
-                }
+                await _postgresService.Connection.ExecuteAsync(upsertQuery, new { userId, mangaId, chapterId = chapterId.Value });
 
                 await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Bookmark updated successfully"));
@@ -611,33 +458,26 @@ namespace AkariApi.Controllers
                     INNER JOIN chapters c ON ub.last_read_chapter_id = c.id
                     WHERE ub.user_id = @userId AND ub.manga_id = @mangaId";
 
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                var row = await _postgresService.Connection.QueryFirstOrDefaultAsync(query, new { userId, mangaId });
+
+                if (row == null)
                 {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("mangaId", mangaId);
-
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        if (!await reader.ReadAsync())
-                        {
-                            await _postgresService.CloseAsync();
-                            return Ok(SuccessResponse<LastReadResponse>.Create(null!));
-                        }
-
-                        var response = new LastReadResponse
-                        {
-                            Id = reader.GetGuid(0),
-                            Number = reader.GetFloat(1),
-                            Title = reader.GetString(2),
-                            Pages = reader.GetInt16(3),
-                            CreatedAt = reader.GetDateTime(4),
-                            UpdatedAt = reader.GetDateTime(5)
-                        };
-
-                        await _postgresService.CloseAsync();
-                        return Ok(SuccessResponse<LastReadResponse>.Create(response));
-                    }
+                    await _postgresService.CloseAsync();
+                    return Ok(SuccessResponse<LastReadResponse>.Create(null!));
                 }
+
+                var response = new LastReadResponse
+                {
+                    Id = (Guid)row.id,
+                    Number = (float)row.number,
+                    Title = (string)row.title,
+                    Pages = Convert.ToInt16(row.pages),
+                    CreatedAt = (DateTime)row.created_at,
+                    UpdatedAt = (DateTime)row.updated_at
+                };
+
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<LastReadResponse>.Create(response));
             }
             catch (Exception ex)
             {
@@ -670,28 +510,19 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                // Check if bookmark exists
-                using (var checkCmd = new NpgsqlCommand("SELECT id FROM user_bookmarks WHERE user_id = @userId AND manga_id = @mangaId", _postgresService.Connection))
-                {
-                    checkCmd.Parameters.AddWithValue("userId", userId);
-                    checkCmd.Parameters.AddWithValue("mangaId", mangaId);
+                var existing = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(
+                    "SELECT id FROM user_bookmarks WHERE user_id = @userId AND manga_id = @mangaId",
+                    new { userId, mangaId });
 
-                    var result = await checkCmd.ExecuteScalarAsync();
-                    if (result == null)
-                    {
-                        await _postgresService.CloseAsync();
-                        return NotFound(ErrorResponse.Create("Not Found", "Bookmark not found"));
-                    }
+                if (existing == null)
+                {
+                    await _postgresService.CloseAsync();
+                    return NotFound(ErrorResponse.Create("Not Found", "Bookmark not found"));
                 }
 
-                // Delete the bookmark
-                using (var deleteCmd = new NpgsqlCommand("DELETE FROM user_bookmarks WHERE user_id = @userId AND manga_id = @mangaId", _postgresService.Connection))
-                {
-                    deleteCmd.Parameters.AddWithValue("userId", userId);
-                    deleteCmd.Parameters.AddWithValue("mangaId", mangaId);
-
-                    await deleteCmd.ExecuteNonQueryAsync();
-                }
+                await _postgresService.Connection.ExecuteAsync(
+                    "DELETE FROM user_bookmarks WHERE user_id = @userId AND manga_id = @mangaId",
+                    new { userId, mangaId });
 
                 await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Bookmark deleted successfully"));
@@ -737,7 +568,6 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                // Single query that resolves all chapters and upserts bookmarks
                 var batchQuery = @"
                     WITH input_data AS (
                         SELECT
@@ -774,14 +604,12 @@ namespace AkariApi.Controllers
                         last_read_chapter_id = EXCLUDED.last_read_chapter_id,
                         updated_at = NOW()";
 
-                using (var cmd = new NpgsqlCommand(batchQuery, _postgresService.Connection))
+                await _postgresService.Connection.ExecuteAsync(batchQuery, new
                 {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("mangaIds", request.Items.Select(i => i.MangaId).ToArray());
-                    cmd.Parameters.AddWithValue("chapterNumbers", request.Items.Select(i => (double)i.ChapterNumber).ToArray());
-
-                    await cmd.ExecuteNonQueryAsync();
-                }
+                    userId,
+                    mangaIds = request.Items.Select(i => i.MangaId).ToArray(),
+                    chapterNumbers = request.Items.Select(i => (double)i.ChapterNumber).ToArray()
+                });
 
                 await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Bookmarks updated successfully"));

@@ -9,7 +9,7 @@ using AkariApi.Models;
 using AkariApi.Helpers;
 using AkariApi.Attributes;
 using System.ComponentModel.DataAnnotations;
-using Npgsql;
+using Dapper;
 
 namespace AkariApi.Controllers
 {
@@ -27,6 +27,22 @@ namespace AkariApi.Controllers
         {
             _supabaseService = supabaseService;
             _postgresService = postgresService;
+        }
+
+        private static UploadDto MapUploadRow(dynamic row)
+        {
+            return new UploadDto
+            {
+                Id = (Guid)row.id,
+                UserId = (Guid)row.user_id,
+                Md5Hash = row.md5_hash == null ? null : (string)row.md5_hash,
+                Size = (long)row.size,
+                Url = row.url == null ? null : (string)row.url,
+                UsageCount = (int)row.usage_count,
+                Tags = (string[])row.tags,
+                CreatedAt = (DateTime)row.created_at,
+                Deleted = row.deleted == null ? false : (bool)row.deleted
+            };
         }
 
         [HttpPost()]
@@ -60,29 +76,14 @@ namespace AkariApi.Controllers
                 }
             }
 
-            // Check if a file with this hash already exists
             UploadDto? existing = null;
             await _postgresService.OpenAsync();
-            using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE md5_hash = @hash LIMIT 1", _postgresService.Connection))
+            var existingRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(
+                "SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE md5_hash = @hash LIMIT 1",
+                new { hash = fileHash });
+            if (existingRow != null)
             {
-                cmd.Parameters.AddWithValue("hash", fileHash);
-                using (var reader = await cmd.ExecuteReaderAsync())
-                {
-                    if (await reader.ReadAsync())
-                    {
-                        existing = new UploadDto
-                        {
-                            Id = reader.GetGuid(0),
-                            UserId = Guid.Parse(reader.GetString(1)),
-                            Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
-                            Size = reader.GetInt64(3),
-                            Url = reader.IsDBNull(4) ? null : reader.GetString(4),
-                            UsageCount = reader.GetInt32(5),
-                            Tags = reader.GetFieldValue<string[]>(6),
-                            CreatedAt = reader.GetDateTime(7)
-                        };
-                    }
-                }
+                existing = MapUploadRow(existingRow);
             }
             await _postgresService.CloseAsync();
 
@@ -91,7 +92,6 @@ namespace AkariApi.Controllers
 
             if (existing != null)
             {
-                // Reuse the URL and processed size for duplicate
                 publicUrl = existing.Url!;
                 processedSize = existing.Size;
             }
@@ -110,7 +110,6 @@ namespace AkariApi.Controllers
 
                 processedSize = ms.Length;
 
-                // Upload to Supabase Storage
                 var uploadResult = await _supabaseService.AdminClient.Storage
                     .From(_bucketName)
                     .Upload(ms.ToArray(), $"{fileHash}.webp", new Supabase.Storage.FileOptions
@@ -138,18 +137,9 @@ namespace AkariApi.Controllers
             };
 
             await _postgresService.OpenAsync();
-            using (var cmd = new NpgsqlCommand("INSERT INTO uploads (id, user_id, md5_hash, size, url, usage_count, tags, created_at) VALUES (@id, @userId, @hash, @size, @url, @usage, @tags, @created)", _postgresService.Connection))
-            {
-                cmd.Parameters.AddWithValue("id", uploadDto.Id);
-                cmd.Parameters.AddWithValue("userId", uploadDto.UserId);
-                cmd.Parameters.AddWithValue("hash", uploadDto.Md5Hash);
-                cmd.Parameters.AddWithValue("size", uploadDto.Size);
-                cmd.Parameters.AddWithValue("url", uploadDto.Url);
-                cmd.Parameters.AddWithValue("usage", uploadDto.UsageCount);
-                cmd.Parameters.AddWithValue("tags", uploadDto.Tags);
-                cmd.Parameters.AddWithValue("created", uploadDto.CreatedAt);
-                await cmd.ExecuteNonQueryAsync();
-            }
+            await _postgresService.Connection.ExecuteAsync(
+                "INSERT INTO uploads (id, user_id, md5_hash, size, url, usage_count, tags, created_at) VALUES (@id, @userId, @hash, @size, @url, @usage, @tags, @created)",
+                new { id = uploadDto.Id, userId = uploadDto.UserId, hash = uploadDto.Md5Hash, size = uploadDto.Size, url = uploadDto.Url, usage = uploadDto.UsageCount, tags = uploadDto.Tags, created = uploadDto.CreatedAt });
             await _postgresService.CloseAsync();
 
             var uploadResponse = new UploadResponse
@@ -186,81 +176,37 @@ namespace AkariApi.Controllers
                 long totalCount;
                 if (!string.IsNullOrWhiteSpace(query))
                 {
-                    using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)", _postgresService.Connection))
-                    {
-                        cmd.Parameters.AddWithValue("query", query);
-                        totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
-                    }
+                    totalCount = await _postgresService.Connection.ExecuteScalarAsync<long>(
+                        "SELECT COUNT(*) FROM uploads WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)",
+                        new { query });
                 }
                 else
                 {
-                    using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE deleted = FALSE", _postgresService.Connection))
-                    {
-                        totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
-                    }
+                    totalCount = await _postgresService.Connection.ExecuteScalarAsync<long>(
+                        "SELECT COUNT(*) FROM uploads WHERE deleted = FALSE");
                 }
 
                 var offset = (clampedPage - 1) * clampedPageSize;
-                var uploads = new List<UploadDto>();
+                IEnumerable<dynamic> rows;
 
                 if (!string.IsNullOrWhiteSpace(query))
                 {
-                    var searchQuery = @"
+                    rows = await _postgresService.Connection.QueryAsync(@"
                         SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted
                         FROM uploads
                         WHERE deleted = FALSE AND search_vector @@ plainto_tsquery('english', @query)
                         ORDER BY ts_rank(search_vector, plainto_tsquery('english', @query)) DESC
-                        OFFSET @offset LIMIT @limit";
-                    using (var cmd = new NpgsqlCommand(searchQuery, _postgresService.Connection))
-                    {
-                        cmd.Parameters.AddWithValue("query", query);
-                        cmd.Parameters.AddWithValue("offset", offset);
-                        cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                        using (var reader = await cmd.ExecuteReaderAsync())
-                        {
-                            while (await reader.ReadAsync())
-                            {
-                                uploads.Add(new UploadDto
-                                {
-                                    Id = reader.GetGuid(0),
-                                    UserId = reader.GetGuid(1),
-                                    Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
-                                    Size = reader.GetInt64(3),
-                                    Url = reader.IsDBNull(4) ? null : reader.GetString(4),
-                                    UsageCount = reader.GetInt32(5),
-                                    Tags = reader.GetFieldValue<string[]>(6),
-                                    CreatedAt = reader.GetDateTime(7)
-                                });
-                            }
-                        }
-                    }
+                        OFFSET @offset LIMIT @limit",
+                        new { query, offset, limit = clampedPageSize });
                 }
                 else
                 {
-                    using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE deleted = FALSE ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
-                    {
-                        cmd.Parameters.AddWithValue("offset", offset);
-                        cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                        using (var reader = await cmd.ExecuteReaderAsync())
-                        {
-                            while (await reader.ReadAsync())
-                            {
-                                uploads.Add(new UploadDto
-                                {
-                                    Id = reader.GetGuid(0),
-                                    UserId = reader.GetGuid(1),
-                                    Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
-                                    Size = reader.GetInt64(3),
-                                    Url = reader.IsDBNull(4) ? null : reader.GetString(4),
-                                    UsageCount = reader.GetInt32(5),
-                                    Tags = reader.GetFieldValue<string[]>(6),
-                                    CreatedAt = reader.GetDateTime(7),
-                                    Deleted = reader.GetBoolean(8)
-                                });
-                            }
-                        }
-                    }
+                    rows = await _postgresService.Connection.QueryAsync(
+                        "SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE deleted = FALSE ORDER BY created_at DESC OFFSET @offset LIMIT @limit",
+                        new { offset, limit = clampedPageSize });
                 }
+
+                var uploads = rows.Select(r => MapUploadRow(r)).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -314,40 +260,16 @@ namespace AkariApi.Controllers
 
                 await _postgresService.OpenAsync();
 
-                long totalCount;
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE user_id = @userId AND deleted = FALSE", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    totalCount = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
-                }
+                long totalCount = await _postgresService.Connection.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(*) FROM uploads WHERE user_id = @userId AND deleted = FALSE",
+                    new { userId });
 
                 var offset = (clampedPage - 1) * clampedPageSize;
-                var uploads = new List<UploadDto>();
+                var rows = await _postgresService.Connection.QueryAsync(
+                    "SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE user_id = @userId AND deleted = FALSE ORDER BY created_at DESC OFFSET @offset LIMIT @limit",
+                    new { userId, offset, limit = clampedPageSize });
 
-                using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE user_id = @userId AND deleted = FALSE ORDER BY created_at DESC OFFSET @offset LIMIT @limit", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("userId", userId);
-                    cmd.Parameters.AddWithValue("offset", offset);
-                    cmd.Parameters.AddWithValue("limit", clampedPageSize);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            uploads.Add(new UploadDto
-                            {
-                                Id = reader.GetGuid(0),
-                                UserId = reader.GetGuid(1),
-                                Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
-                                Size = reader.GetInt64(3),
-                                Url = reader.IsDBNull(4) ? null : reader.GetString(4),
-                                UsageCount = reader.GetInt32(5),
-                                Tags = reader.GetFieldValue<string[]>(6),
-                                CreatedAt = reader.GetDateTime(7),
-                                Deleted = reader.GetBoolean(8)
-                            });
-                        }
-                    }
-                }
+                var uploads = rows.Select(r => MapUploadRow(r)).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -394,30 +316,11 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                var uploads = new List<UploadDto>();
+                var rows = await _postgresService.Connection.QueryAsync(
+                    "SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE id = ANY(@ids) AND deleted = FALSE",
+                    new { ids = request.Ids.ToArray() });
 
-                using (var cmd = new NpgsqlCommand("SELECT id, user_id, md5_hash, size, url, usage_count, tags, created_at, deleted FROM uploads WHERE id = ANY(@ids) AND deleted = FALSE", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("ids", request.Ids.ToArray());
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        while (await reader.ReadAsync())
-                        {
-                            uploads.Add(new UploadDto
-                            {
-                                Id = reader.GetGuid(0),
-                                UserId = reader.GetGuid(1),
-                                Md5Hash = reader.IsDBNull(2) ? null : reader.GetString(2),
-                                Size = reader.GetInt64(3),
-                                Url = reader.IsDBNull(4) ? null : reader.GetString(4),
-                                UsageCount = reader.GetInt32(5),
-                                Tags = reader.GetFieldValue<string[]>(6),
-                                CreatedAt = reader.GetDateTime(7),
-                                Deleted = reader.GetBoolean(8)
-                            });
-                        }
-                    }
-                }
+                var uploads = rows.Select(r => MapUploadRow(r)).ToList();
 
                 await _postgresService.CloseAsync();
 
@@ -467,19 +370,16 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.OpenAsync();
 
-                using (var cmd = new NpgsqlCommand("SELECT user_id, md5_hash, usage_count, deleted FROM uploads WHERE id = @id LIMIT 1", _postgresService.Connection))
+                var infoRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(
+                    "SELECT user_id, md5_hash, usage_count, deleted FROM uploads WHERE id = @id LIMIT 1",
+                    new { id });
+
+                if (infoRow != null)
                 {
-                    cmd.Parameters.AddWithValue("id", id);
-                    using (var reader = await cmd.ExecuteReaderAsync())
-                    {
-                        if (await reader.ReadAsync())
-                        {
-                            uploadUserId = reader.GetGuid(0);
-                            md5Hash = reader.IsDBNull(1) ? null : reader.GetString(1);
-                            usageCount = reader.GetInt32(2);
-                            isDeleted = reader.GetBoolean(3);
-                        }
-                    }
+                    uploadUserId = (Guid)infoRow.user_id;
+                    md5Hash = infoRow.md5_hash == null ? null : (string)infoRow.md5_hash;
+                    usageCount = (int)infoRow.usage_count;
+                    isDeleted = (bool)infoRow.deleted;
                 }
 
                 if (md5Hash == null)
@@ -497,30 +397,22 @@ namespace AkariApi.Controllers
                     return StatusCode(403, ErrorResponse.Create("Forbidden", "You do not own this upload", 403));
                 }
 
-                bool hasDeduplicates = false;
-                using (var cmd = new NpgsqlCommand("SELECT COUNT(*) FROM uploads WHERE md5_hash = @hash AND id <> @id", _postgresService.Connection))
-                {
-                    cmd.Parameters.AddWithValue("hash", md5Hash);
-                    cmd.Parameters.AddWithValue("id", id);
-                    var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
-                    hasDeduplicates = count > 0;
-                }
+                long dupeCount = await _postgresService.Connection.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(*) FROM uploads WHERE md5_hash = @hash AND id <> @id",
+                    new { hash = md5Hash, id });
+                bool hasDeduplicates = dupeCount > 0;
 
                 if (usageCount > 0)
                 {
-                    using (var cmd = new NpgsqlCommand("UPDATE uploads SET deleted = TRUE, url = NULL, md5_hash = NULL WHERE id = @id", _postgresService.Connection))
-                    {
-                        cmd.Parameters.AddWithValue("id", id);
-                        await cmd.ExecuteNonQueryAsync();
-                    }
+                    await _postgresService.Connection.ExecuteAsync(
+                        "UPDATE uploads SET deleted = TRUE, url = NULL, md5_hash = NULL WHERE id = @id",
+                        new { id });
                 }
                 else
                 {
-                    using (var cmd = new NpgsqlCommand("DELETE FROM uploads WHERE id = @id", _postgresService.Connection))
-                    {
-                        cmd.Parameters.AddWithValue("id", id);
-                        await cmd.ExecuteNonQueryAsync();
-                    }
+                    await _postgresService.Connection.ExecuteAsync(
+                        "DELETE FROM uploads WHERE id = @id",
+                        new { id });
                 }
 
                 if (usageCount == 0 && !hasDeduplicates)
