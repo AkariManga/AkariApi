@@ -35,7 +35,7 @@ namespace AkariApi.Controllers
         {
             if (string.IsNullOrEmpty(request.Code) || string.IsNullOrEmpty(request.CodeVerifier))
             {
-                return BadRequest(ErrorResponse.Create("Missing input"));
+                return BadRequest(ErrorResponse.Create("Missing input", status: 400));
             }
 
             if (string.IsNullOrEmpty(clientId))
@@ -73,7 +73,7 @@ namespace AkariApi.Controllers
             else
             {
                 var errorData = JsonSerializer.Deserialize<ErrorData>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ErrorData { Message = "Unknown error" };
-                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message));
+                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message, status: (int)response.StatusCode));
             }
         }
 
@@ -92,14 +92,14 @@ namespace AkariApi.Controllers
         {
             if (request.MangaId <= 0 || request.NumChaptersRead < 0)
             {
-                return BadRequest(ErrorResponse.Create("Invalid input"));
+                return BadRequest(ErrorResponse.Create("Invalid input", status: 400));
             }
 
             var accessToken = Request.Cookies["mal_access_token"];
 
             if (string.IsNullOrEmpty(accessToken))
             {
-                return Unauthorized(ErrorResponse.Create("Missing access token"));
+                return Unauthorized(ErrorResponse.Create("Missing access token", status: 401));
             }
 
             using var httpClient = new HttpClient();
@@ -124,7 +124,7 @@ namespace AkariApi.Controllers
             else
             {
                 var errorData = JsonSerializer.Deserialize<ErrorData>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ErrorData { Message = "Failed to update manga list" };
-                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message));
+                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message, status: (int)response.StatusCode));
             }
         }
 
@@ -146,19 +146,19 @@ namespace AkariApi.Controllers
         {
             if (limit < 1 || limit > 1000)
             {
-                return BadRequest(ErrorResponse.Create("Limit must be between 1 and 1000"));
+                return BadRequest(ErrorResponse.Create("Limit must be between 1 and 1000", status: 400));
             }
 
             if (offset < 0)
             {
-                return BadRequest(ErrorResponse.Create("Offset must be non-negative"));
+                return BadRequest(ErrorResponse.Create("Offset must be non-negative", status: 400));
             }
 
             var accessToken = Request.Cookies["mal_access_token"];
 
             if (string.IsNullOrEmpty(accessToken))
             {
-                return Unauthorized(ErrorResponse.Create("Missing access token"));
+                return Unauthorized(ErrorResponse.Create("Missing access token", status: 401));
             }
 
             var queryParams = new List<string>();
@@ -197,7 +197,7 @@ namespace AkariApi.Controllers
             else
             {
                 var errorData = JsonSerializer.Deserialize<ErrorData>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ErrorData { Message = "Failed to get manga list" };
-                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message));
+                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message, status: (int)response.StatusCode));
             }
         }
 
@@ -230,7 +230,7 @@ namespace AkariApi.Controllers
 
             if (string.IsNullOrEmpty(accessToken))
             {
-                return Unauthorized(ErrorResponse.Create("Missing access token"));
+                return Unauthorized(ErrorResponse.Create("Missing access token", status: 401));
             }
 
             using var httpClient = new HttpClient();
@@ -251,7 +251,7 @@ namespace AkariApi.Controllers
             else
             {
                 var errorData = JsonSerializer.Deserialize<ErrorData>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ErrorData { Message = "Failed to get user" };
-                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message));
+                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message, status: (int)response.StatusCode));
             }
         }
     }

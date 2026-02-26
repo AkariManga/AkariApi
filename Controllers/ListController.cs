@@ -158,7 +158,7 @@ namespace AkariApi.Controllers
                 if (result == null)
                 {
                     await _postgresService.CloseAsync();
-                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied", 404));
                 }
 
                 var entriesQuery = "SELECT e.id, e.list_id, e.manga_id, e.order_index, e.created_at, e.updated_at, m.title AS manga_title, m.cover AS manga_cover, m.description AS manga_description FROM user_manga_list_entries e JOIN manga m ON e.manga_id = m.id WHERE e.list_id = @listId ORDER BY e.order_index ASC";
@@ -201,7 +201,7 @@ namespace AkariApi.Controllers
                 if (!string.IsNullOrEmpty(error))
                 {
                     await _postgresService.CloseAsync();
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
                 }
 
                 long totalCountLong = await _postgresService.Connection.ExecuteScalarAsync<long>(
@@ -250,7 +250,7 @@ namespace AkariApi.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed", 400));
             }
 
             try
@@ -261,7 +261,7 @@ namespace AkariApi.Controllers
                 if (!string.IsNullOrEmpty(error))
                 {
                     await _postgresService.CloseAsync();
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
                 }
 
                 var insertQuery = "INSERT INTO user_manga_lists (user_id, title, description, is_public, created_at, updated_at) VALUES (@userId, @title, @description, @isPublic, @createdAt, @updatedAt) RETURNING id, user_id, title, description, is_public, created_at, updated_at";
@@ -286,7 +286,7 @@ namespace AkariApi.Controllers
 
                 await _postgresService.CloseAsync();
 
-                return CreatedAtAction(nameof(GetListWithEntries), new { id = result.Id }, SuccessResponse<UserMangaListResponse>.Create(result));
+                return CreatedAtAction(nameof(GetListWithEntries), new { id = result.Id }, SuccessResponse<UserMangaListResponse>.Create(result, 201));
             }
             catch (Exception ex)
             {
@@ -311,7 +311,7 @@ namespace AkariApi.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed", 400));
             }
 
             try
@@ -322,7 +322,7 @@ namespace AkariApi.Controllers
                 if (!string.IsNullOrEmpty(error))
                 {
                     await _postgresService.CloseAsync();
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
                 }
 
                 var listOwner = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(
@@ -332,7 +332,7 @@ namespace AkariApi.Controllers
                 if (listOwner == null || listOwner != userId)
                 {
                     await _postgresService.CloseAsync();
-                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied", 404));
                 }
 
                 var nextIndex = Convert.ToInt32(await _postgresService.Connection.ExecuteScalarAsync<object>(
@@ -369,7 +369,7 @@ namespace AkariApi.Controllers
                     var resultEntry = MapEntryRow(entryRow);
                     await _postgresService.CloseAsync();
 
-                    return CreatedAtAction(nameof(GetListWithEntries), new { id }, SuccessResponse<UserMangaListEntryResponse>.Create(resultEntry));
+                    return CreatedAtAction(nameof(GetListWithEntries), new { id }, SuccessResponse<UserMangaListEntryResponse>.Create(resultEntry, 201));
                 }
                 catch (PostgresException ex) when (ex.SqlState == "23505") // unique violation
                 {
@@ -413,7 +413,7 @@ namespace AkariApi.Controllers
                 var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(error))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -425,7 +425,7 @@ namespace AkariApi.Controllers
                 if (listExists == null)
                 {
                     await _postgresService.CloseAsync();
-                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied", 404));
                 }
 
                 var entryExists = await _postgresService.Connection.ExecuteScalarAsync<Guid?>(
@@ -435,7 +435,7 @@ namespace AkariApi.Controllers
                 if (entryExists == null)
                 {
                     await _postgresService.CloseAsync();
-                    return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list"));
+                    return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list", 404));
                 }
 
                 await _postgresService.Connection.ExecuteAsync(
@@ -469,7 +469,7 @@ namespace AkariApi.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed", 400));
             }
 
             try
@@ -479,7 +479,7 @@ namespace AkariApi.Controllers
                 var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(error))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -491,7 +491,7 @@ namespace AkariApi.Controllers
                 if (listExists == null)
                 {
                     await _postgresService.CloseAsync();
-                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied", 404));
                 }
 
                 var entryRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(
@@ -501,7 +501,7 @@ namespace AkariApi.Controllers
                 if (entryRow == null)
                 {
                     await _postgresService.CloseAsync();
-                    return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list"));
+                    return NotFound(ErrorResponse.Create("Not found", "Entry not found or does not belong to this list", 404));
                 }
 
                 int currentOrder = (int)entryRow.order_index;
@@ -570,7 +570,7 @@ namespace AkariApi.Controllers
                 var (userId, error) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(error))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -582,7 +582,7 @@ namespace AkariApi.Controllers
                 if (listExists == null)
                 {
                     await _postgresService.CloseAsync();
-                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied"));
+                    return NotFound(ErrorResponse.Create("Not found", "List not found or access denied", 404));
                 }
 
                 await _postgresService.Connection.ExecuteAsync(
@@ -619,7 +619,7 @@ namespace AkariApi.Controllers
                 if (!string.IsNullOrEmpty(error))
                 {
                     await _postgresService.CloseAsync();
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", error));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", error, 401));
                 }
 
                 var selectQuery = @"

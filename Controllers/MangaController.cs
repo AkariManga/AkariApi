@@ -478,7 +478,7 @@ LIMIT @p_limit OFFSET @p_offset";
                 if (exists == null)
                 {
                     await _postgresService.CloseAsync();
-                    return NotFound(ErrorResponse.Create("Manga not found"));
+                    return NotFound(ErrorResponse.Create("Manga not found", status: 404));
                 }
 
                 var query = @"
@@ -554,12 +554,12 @@ LIMIT @p_limit OFFSET @p_offset";
 
             if (string.IsNullOrEmpty(clientIp))
             {
-                return BadRequest(ErrorResponse.Create("Unable to determine client IP address"));
+                return BadRequest(ErrorResponse.Create("Unable to determine client IP address", status: 400));
             }
 
             if (!System.Net.IPAddress.TryParse(clientIp, out var ipAddress))
             {
-                return BadRequest(ErrorResponse.Create("Invalid client IP address"));
+                return BadRequest(ErrorResponse.Create("Invalid client IP address", status: 400));
             }
 
             if (IsLocalOrPrivateIp(ipAddress))
@@ -655,7 +655,7 @@ END;";
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             try
@@ -718,7 +718,7 @@ LIMIT @p_limit;";
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             try
@@ -755,7 +755,7 @@ LIMIT @p_limit;";
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             try
@@ -792,7 +792,7 @@ LIMIT @p_limit;";
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             try
@@ -827,14 +827,14 @@ LIMIT @p_limit;";
         public async Task<IActionResult> BatchRateManga([FromBody] BatchRateMangaRequest request)
         {
             if (request.Ratings == null || !request.Ratings.Any())
-                return BadRequest(ErrorResponse.Create("At least one rating entry is required"));
+                return BadRequest(ErrorResponse.Create("At least one rating entry is required", status: 400));
 
             if (request.Ratings.Count > 50)
-                return BadRequest(ErrorResponse.Create("Cannot rate more than 50 manga at once"));
+                return BadRequest(ErrorResponse.Create("Cannot rate more than 50 manga at once", status: 400));
 
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
 
             try
             {
@@ -949,12 +949,12 @@ LIMIT @p_limit;";
         {
             if (request.MalIds == null || !request.MalIds.Any())
             {
-                return BadRequest(ErrorResponse.Create("At least one MAL ID is required"));
+                return BadRequest(ErrorResponse.Create("At least one MAL ID is required", status: 400));
             }
 
             if (request.MalIds.Count > 50)
             {
-                return BadRequest(ErrorResponse.Create("Maximum 50 MAL IDs allowed per request"));
+                return BadRequest(ErrorResponse.Create("Maximum 50 MAL IDs allowed per request", status: 400));
             }
 
             try
@@ -1064,12 +1064,12 @@ LIMIT @p_limit;";
         {
             if (request.AniIds == null || !request.AniIds.Any())
             {
-                return BadRequest(ErrorResponse.Create("At least one AniList ID is required"));
+                return BadRequest(ErrorResponse.Create("At least one AniList ID is required", status: 400));
             }
 
             if (request.AniIds.Count > 50)
             {
-                return BadRequest(ErrorResponse.Create("Maximum 50 AniList IDs allowed per request"));
+                return BadRequest(ErrorResponse.Create("Maximum 50 AniList IDs allowed per request", status: 400));
             }
 
             try
@@ -1191,7 +1191,7 @@ LIMIT @p_limit;";
         public async Task<IActionResult> SearchManga([FromQuery] string query, [FromQuery, Range(1, 100)] int limit = 20)
         {
             if (string.IsNullOrWhiteSpace(query))
-                return BadRequest(ErrorResponse.Create("Search query is required"));
+                return BadRequest(ErrorResponse.Create("Search query is required", status: 400));
 
             if (limit > 100)
                 limit = 100;

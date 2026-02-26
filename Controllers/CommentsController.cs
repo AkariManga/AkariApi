@@ -206,13 +206,13 @@ namespace AkariApi.Controllers
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
             if (isBanned)
             {
-                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned", 403));
             }
 
             try
@@ -331,13 +331,13 @@ namespace AkariApi.Controllers
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
             if (isBanned)
             {
-                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned", 403));
             }
 
             try
@@ -351,7 +351,7 @@ namespace AkariApi.Controllers
                 bool isDeleted = isDeletedResult.Value;
 
                 if (isDeleted)
-                    return BadRequest(ErrorResponse.Create("Cannot vote on deleted comment"));
+                    return BadRequest(ErrorResponse.Create("Cannot vote on deleted comment", status: 400));
 
                 var existingVoteQuery = "SELECT value FROM comment_votes WHERE comment_id = @comment_id AND user_id = @user_id";
                 short? existingVoteValue = await _postgresService.Connection.ExecuteScalarAsync<short?>(existingVoteQuery, new { comment_id = commentId, user_id = userId });
@@ -408,13 +408,13 @@ namespace AkariApi.Controllers
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
             if (isBanned)
             {
-                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned", 403));
             }
 
             try
@@ -428,7 +428,7 @@ namespace AkariApi.Controllers
 
                 if (commentOwnerId == userId)
                 {
-                    return BadRequest(ErrorResponse.Create("You cannot report your own comment"));
+                    return BadRequest(ErrorResponse.Create("You cannot report your own comment", status: 400));
                 }
 
                 var reasonString = request.Reason switch
@@ -453,7 +453,7 @@ namespace AkariApi.Controllers
                     description = (object?)request.Description ?? DBNull.Value
                 });
 
-                return StatusCode(201, SuccessResponse<string>.Create("Comment reported successfully"));
+                return StatusCode(201, SuccessResponse<string>.Create("Comment reported successfully", 201));
             }
             catch (PostgresException ex) when (ex.SqlState == "23505") // Unique violation
             {
@@ -482,19 +482,19 @@ namespace AkariApi.Controllers
         {
             if (CommentHelper.ContainsBannedContent(request.Content))
             {
-                return BadRequest(ErrorResponse.Create("Comment contains banned content"));
+                return BadRequest(ErrorResponse.Create("Comment contains banned content", status: 400));
             }
 
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
             if (isBanned)
             {
-                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned", 403));
             }
 
             try
@@ -506,9 +506,9 @@ namespace AkariApi.Controllers
                     var parentQuery = "SELECT deleted FROM comments WHERE id = @parent_id AND target_id = @target_id";
                     var parentDeleted = await _postgresService.Connection.ExecuteScalarAsync<bool?>(parentQuery, new { parent_id = request.ParentId.Value, target_id = id });
                     if (parentDeleted == null)
-                        return BadRequest(ErrorResponse.Create("Invalid parent comment"));
+                        return BadRequest(ErrorResponse.Create("Invalid parent comment", status: 400));
                     if (parentDeleted.Value)
-                        return BadRequest(ErrorResponse.Create("Cannot reply to a deleted comment"));
+                        return BadRequest(ErrorResponse.Create("Cannot reply to a deleted comment", status: 400));
                 }
 
                 var insertQuery = @"
@@ -556,7 +556,7 @@ namespace AkariApi.Controllers
                 var commentResponse = MapCommentRow(row);
                 commentResponse.ReplyCount = 0;
 
-                return Created("", SuccessResponse<CommentResponse>.Create(commentResponse));
+                return Created("", SuccessResponse<CommentResponse>.Create(commentResponse, 201));
             }
             catch (Exception ex)
             {
@@ -581,19 +581,19 @@ namespace AkariApi.Controllers
         {
             if (CommentHelper.ContainsBannedContent(request.Content))
             {
-                return BadRequest(ErrorResponse.Create("Comment contains banned content"));
+                return BadRequest(ErrorResponse.Create("Comment contains banned content", status: 400));
             }
 
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
             if (isBanned)
             {
-                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned", 403));
             }
 
             try
@@ -609,10 +609,10 @@ namespace AkariApi.Controllers
                 bool isDeleted = (bool)checkRow.deleted;
 
                 if (ownerId != userId)
-                    return StatusCode(403, ErrorResponse.Create("Forbidden", "You can only edit your own comments"));
+                    return StatusCode(403, ErrorResponse.Create("Forbidden", "You can only edit your own comments", 403));
 
                 if (isDeleted)
-                    return BadRequest(ErrorResponse.Create("Cannot edit deleted comment"));
+                    return BadRequest(ErrorResponse.Create("Cannot edit deleted comment", status: 400));
 
                 await _postgresService.Connection.ExecuteAsync(
                     "UPDATE comments SET content = @content, updated_at = @updated_at, edited = true WHERE id = @comment_id",
@@ -642,13 +642,13 @@ namespace AkariApi.Controllers
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             var isBanned = await AuthenticationHelper.IsUserBannedAsync(userId, _postgresService);
             if (isBanned)
             {
-                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned"));
+                return StatusCode(403, ErrorResponse.Create("Forbidden", "Your account is banned", 403));
             }
 
             try
@@ -662,7 +662,7 @@ namespace AkariApi.Controllers
                     return NotFound(ErrorResponse.Create("Comment not found", status: 404));
 
                 if (ownerId != userId)
-                    return StatusCode(403, ErrorResponse.Create("Forbidden", "You can only delete your own comments"));
+                    return StatusCode(403, ErrorResponse.Create("Forbidden", "You can only delete your own comments", 403));
 
                 long replyCount = await _postgresService.Connection.ExecuteScalarAsync<long>(
                     "SELECT COUNT(*) FROM comments WHERE parent_id = @comment_id",

@@ -76,7 +76,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -200,7 +200,7 @@ namespace AkariApi.Controllers
         {
             if (string.IsNullOrWhiteSpace(query))
             {
-                return BadRequest(ErrorResponse.Create("Bad Request", "Search query is required"));
+                return BadRequest(ErrorResponse.Create("Bad Request", "Search query is required", 400));
             }
 
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
@@ -212,7 +212,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -340,7 +340,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -379,7 +379,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -407,7 +407,7 @@ namespace AkariApi.Controllers
                     await _postgresService.CloseAsync();
                     return BadRequest(ErrorResponse.Create("Bad Request", request.ChapterNumber.HasValue
                         ? $"Chapter {request.ChapterNumber.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} not found for this manga"
-                        : "No chapters found for this manga"));
+                        : "No chapters found for this manga", 400));
                 }
 
                 var upsertQuery = @"
@@ -447,7 +447,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -505,7 +505,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -517,7 +517,7 @@ namespace AkariApi.Controllers
                 if (existing == null)
                 {
                     await _postgresService.CloseAsync();
-                    return NotFound(ErrorResponse.Create("Not Found", "Bookmark not found"));
+                    return NotFound(ErrorResponse.Create("Not Found", "Bookmark not found", 404));
                 }
 
                 await _postgresService.Connection.ExecuteAsync(
@@ -549,11 +549,11 @@ namespace AkariApi.Controllers
             const int maxBatchSize = 100;
             if (request.Items == null || request.Items.Count == 0)
             {
-                return BadRequest(ErrorResponse.Create("Bad Request", "No items provided"));
+                return BadRequest(ErrorResponse.Create("Bad Request", "No items provided", 400));
             }
             if (request.Items.Count > maxBatchSize)
             {
-                return BadRequest(ErrorResponse.Create("Bad Request", $"Batch size exceeds maximum of {maxBatchSize}"));
+                return BadRequest(ErrorResponse.Create("Bad Request", $"Batch size exceeds maximum of {maxBatchSize}", 400));
             }
 
             try
@@ -563,7 +563,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -619,7 +619,7 @@ namespace AkariApi.Controllers
                 await _postgresService.CloseAsync();
                 if (ex.Message.Contains("Chapter not found") || ex.Message.Contains("Array lengths"))
                 {
-                    return BadRequest(ErrorResponse.Create("Bad Request", ex.Message));
+                    return BadRequest(ErrorResponse.Create("Bad Request", ex.Message, 400));
                 }
                 return StatusCode(500, ErrorResponse.Create("Failed to batch update bookmarks", ex.Message));
             }

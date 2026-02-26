@@ -36,7 +36,7 @@ namespace AkariApi.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed", 400));
             }
 
             try
@@ -51,7 +51,7 @@ namespace AkariApi.Controllers
                 if (count > 0)
                 {
                     await _postgresService.CloseAsync();
-                    return BadRequest(ErrorResponse.Create("Invalid request", "Username already taken"));
+                    return BadRequest(ErrorResponse.Create("Invalid request", "Username already taken", 400));
                 }
 
                 var options = new Supabase.Gotrue.SignUpOptions
@@ -105,7 +105,7 @@ namespace AkariApi.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed", 400));
             }
 
             try
@@ -202,7 +202,7 @@ namespace AkariApi.Controllers
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             try
@@ -216,7 +216,7 @@ namespace AkariApi.Controllers
                 if (userResponse == null)
                 {
                     await _postgresService.CloseAsync();
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", "Profile not found"));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", "Profile not found", 401));
                 }
 
                 await _postgresService.CloseAsync();
@@ -225,7 +225,7 @@ namespace AkariApi.Controllers
             catch (Exception ex)
             {
                 await _postgresService.CloseAsync();
-                return Unauthorized(ErrorResponse.Create("Unauthorized", ex.Message));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", ex.Message, 401));
             }
         }
 
@@ -424,13 +424,13 @@ namespace AkariApi.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed"));
+                return BadRequest(ErrorResponse.Create("Invalid request", "Validation failed", 400));
             }
 
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             try
@@ -442,7 +442,7 @@ namespace AkariApi.Controllers
                 if (Guid.TryParse(request.Username, out _))
                 {
                     await _postgresService.CloseAsync();
-                    return BadRequest(ErrorResponse.Create("Invalid request", "Username cannot be a UUID"));
+                    return BadRequest(ErrorResponse.Create("Invalid request", "Username cannot be a UUID", 400));
                 }
 
                 var count = await _postgresService.Connection.ExecuteScalarAsync<long>(
@@ -451,7 +451,7 @@ namespace AkariApi.Controllers
                 if (count > 0)
                 {
                     await _postgresService.CloseAsync();
-                    return BadRequest(ErrorResponse.Create("Invalid request", "Username already taken"));
+                    return BadRequest(ErrorResponse.Create("Invalid request", "Username already taken", 400));
                 }
 
                 await _postgresService.Connection.ExecuteAsync(
