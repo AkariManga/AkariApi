@@ -53,7 +53,7 @@ namespace AkariApi.Controllers
         public async Task<IActionResult> UploadImage([FromForm] UploadRequest request)
         {
             if (request.File == null || request.File.Length == 0)
-                return BadRequest(ErrorResponse.Create("No file uploaded."));
+                return BadRequest(ErrorResponse.Create("No file uploaded.", status: 400));
 
             var file = request.File;
             var tags = request.Tags ?? Array.Empty<string>();
@@ -63,7 +63,7 @@ namespace AkariApi.Controllers
             var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
             if (!string.IsNullOrEmpty(errorMessage))
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
             }
 
             string fileHash;
@@ -310,7 +310,7 @@ namespace AkariApi.Controllers
         public async Task<IActionResult> GetBatchUploads([FromBody] BatchUploadRequest request)
         {
             if (request.Ids == null || request.Ids.Count == 0 || request.Ids.Count > 100)
-                return BadRequest(ErrorResponse.Create("Invalid request. Provide 1-100 IDs."));
+                return BadRequest(ErrorResponse.Create("Invalid request. Provide 1-100 IDs.", status: 400));
 
             try
             {

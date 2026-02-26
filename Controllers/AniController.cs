@@ -33,7 +33,7 @@ namespace AkariApi.Controllers
 
             if (string.IsNullOrEmpty(accessToken))
             {
-                return Unauthorized(ErrorResponse.Create("Missing access token"));
+                return Unauthorized(ErrorResponse.Create("Missing access token", status: 401));
             }
 
             using var httpClient = new HttpClient();
@@ -69,7 +69,7 @@ namespace AkariApi.Controllers
             else
             {
                 var errorData = JsonSerializer.Deserialize<ErrorData>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ErrorData { Message = "Failed to get user info" };
-                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message));
+                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message, status: (int)response.StatusCode));
             }
         }
 
@@ -101,7 +101,7 @@ namespace AkariApi.Controllers
 
             if (string.IsNullOrEmpty(accessToken))
             {
-                return Unauthorized(ErrorResponse.Create("Missing access token"));
+                return Unauthorized(ErrorResponse.Create("Missing access token", status: 401));
             }
 
             using var httpClient = new HttpClient();
@@ -144,7 +144,7 @@ namespace AkariApi.Controllers
             else
             {
                 var errorData = JsonSerializer.Deserialize<ErrorData>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ErrorData { Message = "Failed to get manga list" };
-                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message));
+                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message, status: (int)response.StatusCode));
             }
         }
 
@@ -162,14 +162,14 @@ namespace AkariApi.Controllers
         {
             if (request.MediaId <= 0 || request.Progress < 0)
             {
-                return BadRequest(ErrorResponse.Create("Invalid input"));
+                return BadRequest(ErrorResponse.Create("Invalid input", status: 400));
             }
 
             var accessToken = Request.Cookies[AniListCookieName];
 
             if (string.IsNullOrEmpty(accessToken))
             {
-                return Unauthorized(ErrorResponse.Create("Missing access token"));
+                return Unauthorized(ErrorResponse.Create("Missing access token", status: 401));
             }
 
             using var httpClient = new HttpClient();
@@ -210,7 +210,7 @@ namespace AkariApi.Controllers
             else
             {
                 var errorData = JsonSerializer.Deserialize<ErrorData>(responseContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new ErrorData { Message = "Failed to update manga list" };
-                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message));
+                return StatusCode((int)response.StatusCode, ErrorResponse.Create(errorData.Message, status: (int)response.StatusCode));
             }
         }
     }

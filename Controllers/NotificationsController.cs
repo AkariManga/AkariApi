@@ -41,7 +41,7 @@ namespace AkariApi.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ErrorResponse.Create("Bad Request", "Invalid request data"));
+                return BadRequest(ErrorResponse.Create("Bad Request", "Invalid request data", 400));
             }
 
             var encryptionKey = _configuration["ENCRYPTION_KEY"];
@@ -57,7 +57,7 @@ namespace AkariApi.Controllers
                 var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
                 if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage));
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
                 }
 
                 await _postgresService.OpenAsync();
@@ -80,7 +80,7 @@ namespace AkariApi.Controllers
                 await _postgresService.CloseAsync();
                 if (ex.Message.Contains("duplicate"))
                 {
-                    return BadRequest(ErrorResponse.Create("Bad Request", "Subscription already exists"));
+                    return BadRequest(ErrorResponse.Create("Bad Request", "Subscription already exists", 400));
                 }
                 return StatusCode(500, ErrorResponse.Create("Failed to subscribe", ex.Message));
             }
@@ -102,12 +102,12 @@ namespace AkariApi.Controllers
             var providedApiKey = Request.Headers["X-API-Key"].ToString();
             if (string.IsNullOrEmpty(providedApiKey) || providedApiKey != expectedApiKey)
             {
-                return Unauthorized(ErrorResponse.Create("Unauthorized", "Invalid API key"));
+                return Unauthorized(ErrorResponse.Create("Unauthorized", "Invalid API key", 401));
             }
 
             if (!ModelState.IsValid)
             {
-                return BadRequest(ErrorResponse.Create("Bad Request", "Invalid request data"));
+                return BadRequest(ErrorResponse.Create("Bad Request", "Invalid request data", 400));
             }
 
             try
