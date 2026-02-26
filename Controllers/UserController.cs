@@ -230,6 +230,109 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Get a paginated list of users
+        /// </summary>
+        /// <param name="page">The page number (1-based).</param>
+        /// <param name="pageSize">The number of items per page.</param>
+        /// <param name="sortBy">The field to sort by.</param>
+        /// <param name="sortDirection">The sort direction.</param>
+        /// <returns>A paginated list of user profiles.</returns>
+        [HttpGet]
+        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.TenMinutes)]
+        [ProducesResponseType(typeof(SuccessResponse<PaginatedResponse<UserProfileDetailsResponse>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetUsers(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] UserSortBy sortBy = UserSortBy.CreatedAt,
+            [FromQuery] SortDirection sortDirection = SortDirection.Descending)
+        {
+            (page, pageSize) = PaginationHelper.ClampPagination(page, pageSize);
+
+            var sortColumn = sortBy switch
+            {
+                UserSortBy.Username => "p.username",
+                UserSortBy.TotalComments => "total_comments",
+                UserSortBy.TotalUpvotes => "total_upvotes",
+                UserSortBy.TotalBookmarks => "total_bookmarks",
+                UserSortBy.TotalUploads => "total_uploads",
+                UserSortBy.TotalLists => "total_lists",
+                _ => "u.created_at"
+            };
+            var sortDir = sortDirection == SortDirection.Ascending ? "ASC" : "DESC";
+
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var countSql = "SELECT COUNT(*) FROM profiles p";
+                var totalItems = await _postgresService.Connection.ExecuteScalarAsync<int>(countSql);
+
+                var query = $@"
+                    SELECT
+                        p.id AS ""UserId"",
+                        p.username,
+                        p.display_name,
+                        p.role,
+                        p.banned,
+                        u.created_at,
+                        COALESCE(c.comment_count, 0) AS total_comments,
+                        COALESCE(c.total_upvotes, 0) AS total_upvotes,
+                        COALESCE(c.total_downvotes, 0) AS total_downvotes,
+                        COALESCE(b.bookmark_count, 0) AS total_bookmarks,
+                        COALESCE(up.upload_count, 0) AS total_uploads,
+                        COALESCE(l.list_count, 0) AS total_lists
+                    FROM profiles p
+                    LEFT JOIN auth.users u ON p.id = u.id
+                    LEFT JOIN (
+                        SELECT
+                            user_id,
+                            COUNT(*) AS comment_count,
+                            SUM(upvotes) AS total_upvotes,
+                            SUM(downvotes) AS total_downvotes
+                        FROM comments
+                        WHERE deleted = false
+                        GROUP BY user_id
+                    ) c ON p.id = c.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS bookmark_count
+                        FROM user_bookmarks
+                        GROUP BY user_id
+                    ) b ON p.id = b.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS upload_count
+                        FROM uploads
+                        GROUP BY user_id
+                    ) up ON p.id = up.user_id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS list_count
+                        FROM user_manga_lists
+                        GROUP BY user_id
+                    ) l ON p.id = l.user_id
+                    ORDER BY {sortColumn} {sortDir}
+                    LIMIT @pageSize OFFSET @offset";
+
+                var users = (await _postgresService.Connection.QueryAsync<UserProfileDetailsResponse>(
+                    query, new { pageSize, offset = (page - 1) * pageSize })).ToList();
+
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<PaginatedResponse<UserProfileDetailsResponse>>.Create(
+                    new PaginatedResponse<UserProfileDetailsResponse>
+                    {
+                        Items = users,
+                        TotalItems = totalItems,
+                        CurrentPage = page,
+                        PageSize = pageSize
+                    }));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve users", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Get user profile details by user ID
         /// </summary>
         /// <param name="userId">The unique identifier of the user.</param>

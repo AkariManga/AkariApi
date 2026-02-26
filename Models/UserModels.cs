@@ -2,6 +2,23 @@ using System.ComponentModel.DataAnnotations;
 
 namespace AkariApi.Models
 {
+    public enum UserSortBy
+    {
+        CreatedAt,
+        Username,
+        TotalComments,
+        TotalUpvotes,
+        TotalBookmarks,
+        TotalUploads,
+        TotalLists
+    }
+
+    public enum SortDirection
+    {
+        Ascending,
+        Descending
+    }
+
     public enum UserRole
     {
         user,
