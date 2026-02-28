@@ -142,42 +142,6 @@ namespace AkariApi.Models
         public double Rank { get; set; }
     }
 
-    public class PopularMangaResponse
-    {
-        [Required]
-        public required Guid Id { get; set; }
-        [Required]
-        public required string OrigId { get; set; }
-        [Required]
-        public required string Title { get; set; }
-        [Required]
-        public required string Cover { get; set; }
-        [Required]
-        public required string Description { get; set; }
-        [Required]
-        public required string Status { get; set; }
-        [Required]
-        public required string Type { get; set; }
-        [Required]
-        public required string[] Authors { get; set; }
-        [Required]
-        public required string[] Genres { get; set; }
-        [Required]
-        public required decimal Score { get; set; }
-        public int? MalId { get; set; }
-        public int? AniId { get; set; }
-        [Required]
-        public required DateTimeOffset CreatedAt { get; set; }
-        [Required]
-        public required DateTimeOffset UpdatedAt { get; set; }
-        [Required]
-        public required string[] AlternativeTitles { get; set; }
-        [Required]
-        public required long ViewCount { get; set; }
-        [Required]
-        public required long TotalCount { get; set; }
-    }
-
     public class RateMangaRequest
     {
         [Required]
