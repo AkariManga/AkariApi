@@ -59,6 +59,61 @@ namespace AkariApi.Models
         public int? AniId { get; set; }
     }
 
+    public class MangaRatingDistribution
+    {
+        [Required]
+        [JsonPropertyName("1")]
+        public int Score1 { get; set; } = 0;
+
+        [Required]
+        [JsonPropertyName("2")]
+        public int Score2 { get; set; } = 0;
+
+        [Required]
+        [JsonPropertyName("3")]
+        public int Score3 { get; set; } = 0;
+
+        [Required]
+        [JsonPropertyName("4")]
+        public int Score4 { get; set; } = 0;
+
+        [Required]
+        [JsonPropertyName("5")]
+        public int Score5 { get; set; } = 0;
+
+        [Required]
+        [JsonPropertyName("6")]
+        public int Score6 { get; set; } = 0;
+
+        [Required]
+        [JsonPropertyName("7")]
+        public int Score7 { get; set; } = 0;
+
+        [Required]
+        [JsonPropertyName("8")]
+        public int Score8 { get; set; } = 0;
+
+        [Required]
+        [JsonPropertyName("9")]
+        public int Score9 { get; set; } = 0;
+
+        [Required]
+        [JsonPropertyName("10")]
+        public int Score10 { get; set; } = 0;
+    }
+
+    public class MangaRatingResponse
+    {
+        [Required]
+        public decimal Average { get; set; } = 0;
+
+        [Required]
+        public int Total { get; set; } = 0;
+
+        [Required]
+        public MangaRatingDistribution Distribution { get; set; } = new MangaRatingDistribution();
+    }
+
     public class MangaResponse
     {
         [Required]
@@ -90,7 +145,7 @@ namespace AkariApi.Models
         public int Views { get; set; } = 0;
 
         [Required]
-        public decimal Score { get; set; } = 0;
+        public MangaRatingResponse Rating { get; set; } = new MangaRatingResponse();
 
         public string[]? AlternativeTitles { get; set; }
 
