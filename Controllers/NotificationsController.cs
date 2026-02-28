@@ -87,6 +87,32 @@ namespace AkariApi.Controllers
         }
 
         /// <summary>
+        /// Get visible website notifications
+        /// </summary>
+        /// <returns>List of visible website notifications.</returns>
+        [HttpGet("website")]
+        [ProducesResponseType(typeof(SuccessResponse<IEnumerable<WebsiteNotification>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetWebsiteNotifications()
+        {
+            try
+            {
+                await _postgresService.OpenAsync();
+
+                var notifications = await _postgresService.Connection.QueryAsync<WebsiteNotification>(
+                    "SELECT id, title, content, created_at FROM website_notifications WHERE visible = true ORDER BY created_at DESC");
+
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<IEnumerable<WebsiteNotification>>.Create(notifications));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to get website notifications", ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Send push notification to users who bookmarked the manga
         /// </summary>
         /// <param name="request">The notification payload.</param>
