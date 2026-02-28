@@ -36,7 +36,7 @@ namespace AkariApi.Controllers
         }
 
         private const string RatingSelectColumns = @"
-    COALESCE(mr.avg_rating, 0)::numeric(3,2) AS avg_rating,
+    COALESCE(mr.avg_rating, 0)::numeric(4,2) AS avg_rating,
     COALESCE(mr.total_ratings, 0) AS total_ratings,
     COALESCE(mr.rating_1,  0) AS rating_1_count,
     COALESCE(mr.rating_2,  0) AS rating_2_count,
