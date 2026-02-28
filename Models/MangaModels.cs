@@ -68,34 +68,7 @@ namespace AkariApi.Models
         public int Total { get; set; } = 0;
 
         [Required]
-        public int Rating1 { get; set; } = 0;
-
-        [Required]
-        public int Rating2 { get; set; } = 0;
-
-        [Required]
-        public int Rating3 { get; set; } = 0;
-
-        [Required]
-        public int Rating4 { get; set; } = 0;
-
-        [Required]
-        public int Rating5 { get; set; } = 0;
-
-        [Required]
-        public int Rating6 { get; set; } = 0;
-
-        [Required]
-        public int Rating7 { get; set; } = 0;
-
-        [Required]
-        public int Rating8 { get; set; } = 0;
-
-        [Required]
-        public int Rating9 { get; set; } = 0;
-
-        [Required]
-        public int Rating10 { get; set; } = 0;
+        public Dictionary<string, int> Distribution { get; set; } = new Dictionary<string, int>();
     }
 
     public class MangaResponse

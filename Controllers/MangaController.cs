@@ -70,20 +70,24 @@ namespace AkariApi.Controllers
 
         private static MangaRatingResponse MapRatingFromRow(dynamic r)
         {
+            static int ToInt(object? v) => v == null ? 0 : (int)Math.Min((long)v, int.MaxValue);
             return new MangaRatingResponse
             {
                 Average = r.avg_rating == null ? 0m : (decimal)r.avg_rating,
                 Total = r.total_ratings == null ? 0 : (int)Math.Min((long)r.total_ratings, int.MaxValue),
-                Rating1  = r.rating_1_count  == null ? 0 : (int)Math.Min((long)r.rating_1_count,  int.MaxValue),
-                Rating2  = r.rating_2_count  == null ? 0 : (int)Math.Min((long)r.rating_2_count,  int.MaxValue),
-                Rating3  = r.rating_3_count  == null ? 0 : (int)Math.Min((long)r.rating_3_count,  int.MaxValue),
-                Rating4  = r.rating_4_count  == null ? 0 : (int)Math.Min((long)r.rating_4_count,  int.MaxValue),
-                Rating5  = r.rating_5_count  == null ? 0 : (int)Math.Min((long)r.rating_5_count,  int.MaxValue),
-                Rating6  = r.rating_6_count  == null ? 0 : (int)Math.Min((long)r.rating_6_count,  int.MaxValue),
-                Rating7  = r.rating_7_count  == null ? 0 : (int)Math.Min((long)r.rating_7_count,  int.MaxValue),
-                Rating8  = r.rating_8_count  == null ? 0 : (int)Math.Min((long)r.rating_8_count,  int.MaxValue),
-                Rating9  = r.rating_9_count  == null ? 0 : (int)Math.Min((long)r.rating_9_count,  int.MaxValue),
-                Rating10 = r.rating_10_count == null ? 0 : (int)Math.Min((long)r.rating_10_count, int.MaxValue),
+                Distribution = new Dictionary<string, int>
+                {
+                    ["1"]  = ToInt(r.rating_1_count),
+                    ["2"]  = ToInt(r.rating_2_count),
+                    ["3"]  = ToInt(r.rating_3_count),
+                    ["4"]  = ToInt(r.rating_4_count),
+                    ["5"]  = ToInt(r.rating_5_count),
+                    ["6"]  = ToInt(r.rating_6_count),
+                    ["7"]  = ToInt(r.rating_7_count),
+                    ["8"]  = ToInt(r.rating_8_count),
+                    ["9"]  = ToInt(r.rating_9_count),
+                    ["10"] = ToInt(r.rating_10_count),
+                },
             };
         }
 
