@@ -75,18 +75,18 @@ namespace AkariApi.Controllers
             {
                 Average = r.avg_rating == null ? 0m : (decimal)r.avg_rating,
                 Total = r.total_ratings == null ? 0 : (int)Math.Min((long)r.total_ratings, int.MaxValue),
-                Distribution = new Dictionary<string, int>
+                Distribution = new MangaRatingDistribution
                 {
-                    ["1"]  = ToInt(r.rating_1_count),
-                    ["2"]  = ToInt(r.rating_2_count),
-                    ["3"]  = ToInt(r.rating_3_count),
-                    ["4"]  = ToInt(r.rating_4_count),
-                    ["5"]  = ToInt(r.rating_5_count),
-                    ["6"]  = ToInt(r.rating_6_count),
-                    ["7"]  = ToInt(r.rating_7_count),
-                    ["8"]  = ToInt(r.rating_8_count),
-                    ["9"]  = ToInt(r.rating_9_count),
-                    ["10"] = ToInt(r.rating_10_count),
+                    Score1  = ToInt(r.rating_1_count),
+                    Score2  = ToInt(r.rating_2_count),
+                    Score3  = ToInt(r.rating_3_count),
+                    Score4  = ToInt(r.rating_4_count),
+                    Score5  = ToInt(r.rating_5_count),
+                    Score6  = ToInt(r.rating_6_count),
+                    Score7  = ToInt(r.rating_7_count),
+                    Score8  = ToInt(r.rating_8_count),
+                    Score9  = ToInt(r.rating_9_count),
+                    Score10 = ToInt(r.rating_10_count),
                 },
             };
         }

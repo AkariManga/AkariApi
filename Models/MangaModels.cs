@@ -59,6 +59,39 @@ namespace AkariApi.Models
         public int? AniId { get; set; }
     }
 
+    public class MangaRatingDistribution
+    {
+        [JsonPropertyName("1")]
+        public int Score1 { get; set; } = 0;
+
+        [JsonPropertyName("2")]
+        public int Score2 { get; set; } = 0;
+
+        [JsonPropertyName("3")]
+        public int Score3 { get; set; } = 0;
+
+        [JsonPropertyName("4")]
+        public int Score4 { get; set; } = 0;
+
+        [JsonPropertyName("5")]
+        public int Score5 { get; set; } = 0;
+
+        [JsonPropertyName("6")]
+        public int Score6 { get; set; } = 0;
+
+        [JsonPropertyName("7")]
+        public int Score7 { get; set; } = 0;
+
+        [JsonPropertyName("8")]
+        public int Score8 { get; set; } = 0;
+
+        [JsonPropertyName("9")]
+        public int Score9 { get; set; } = 0;
+
+        [JsonPropertyName("10")]
+        public int Score10 { get; set; } = 0;
+    }
+
     public class MangaRatingResponse
     {
         [Required]
@@ -68,7 +101,7 @@ namespace AkariApi.Models
         public int Total { get; set; } = 0;
 
         [Required]
-        public Dictionary<string, int> Distribution { get; set; } = new Dictionary<string, int>();
+        public MangaRatingDistribution Distribution { get; set; } = new MangaRatingDistribution();
     }
 
     public class MangaResponse
