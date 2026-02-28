@@ -28,4 +28,16 @@ namespace AkariApi.Models
         [Required]
         public required string Auth { get; set; } = string.Empty;
     }
+
+    public class WebsiteNotification
+    {
+        [Required]
+        public long Id { get; set; }
+        [Required]
+        public required string Title { get; set; }
+        [Required]
+        public required string Content { get; set; }
+        [Required]
+        public DateTime CreatedAt { get; set; }
+    }
 }
