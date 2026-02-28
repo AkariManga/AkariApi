@@ -59,6 +59,45 @@ namespace AkariApi.Models
         public int? AniId { get; set; }
     }
 
+    public class MangaRatingResponse
+    {
+        [Required]
+        public decimal Average { get; set; } = 0;
+
+        [Required]
+        public int Total { get; set; } = 0;
+
+        [Required]
+        public int Rating1 { get; set; } = 0;
+
+        [Required]
+        public int Rating2 { get; set; } = 0;
+
+        [Required]
+        public int Rating3 { get; set; } = 0;
+
+        [Required]
+        public int Rating4 { get; set; } = 0;
+
+        [Required]
+        public int Rating5 { get; set; } = 0;
+
+        [Required]
+        public int Rating6 { get; set; } = 0;
+
+        [Required]
+        public int Rating7 { get; set; } = 0;
+
+        [Required]
+        public int Rating8 { get; set; } = 0;
+
+        [Required]
+        public int Rating9 { get; set; } = 0;
+
+        [Required]
+        public int Rating10 { get; set; } = 0;
+    }
+
     public class MangaResponse
     {
         [Required]
@@ -90,7 +129,7 @@ namespace AkariApi.Models
         public int Views { get; set; } = 0;
 
         [Required]
-        public decimal Score { get; set; } = 0;
+        public MangaRatingResponse Rating { get; set; } = new MangaRatingResponse();
 
         public string[]? AlternativeTitles { get; set; }
 
