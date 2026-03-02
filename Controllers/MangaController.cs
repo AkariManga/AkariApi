@@ -121,6 +121,19 @@ namespace AkariApi.Controllers
             return (short)0;
         }
 
+        private static string GetSearchQuery(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query))
+                return "";
+
+            var terms = query.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(term => term.Trim())
+                .Where(term => !string.IsNullOrEmpty(term))
+                .Select(term => $"{term}:*");
+
+            return string.Join(" & ", terms);
+        }
+
         /// <summary>
         /// Get manga list
         /// </summary>
@@ -162,7 +175,7 @@ namespace AkariApi.Controllers
                 var listQuery = $@"WITH tsq AS (
     SELECT CASE
         WHEN @p_query::text IS NOT NULL AND @p_query::text != ''
-        THEN plainto_tsquery('english', @p_query::text)
+        THEN to_tsquery('english', @p_query::text)
         ELSE NULL
     END AS query
 ),
@@ -215,7 +228,7 @@ ORDER BY
         WHEN @p_sort_by = 'search' THEN
             CASE
                 WHEN tsq.query IS NOT NULL THEN
-                    ts_rank(m.search_vector, tsq.query)::float8 + (m.view_count::float8 / 100)
+                    ts_rank_cd(m.search_vector, tsq.query)::float8 + (m.view_count::float8 / 100)
                 ELSE m.view_count::float8
             END
     END DESC
@@ -231,7 +244,7 @@ LIMIT @p_limit OFFSET @p_offset";
                 dp.Add("p_limit", clampedPageSize);
                 dp.Add("p_offset", offset);
                 dp.Add("p_sort_by", sortBy.ToString());
-                dp.Add("p_query", string.IsNullOrWhiteSpace(query) ? null : query);
+                dp.Add("p_query", string.IsNullOrWhiteSpace(query) ? null : GetSearchQuery(query));
 
                 var rows = await _postgresService.Connection.QueryAsync(listQuery, dp);
                 var mangaList = new List<MangaResponse>();
@@ -1304,15 +1317,15 @@ LIMIT @p_limit;";
 
                 var searchQuery = $@"
                     SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles,
-                           (ts_rank(m.search_vector, plainto_tsquery('english', @query)) + (m.view_count::float / 100)) AS rank,
-                           {RatingSelectColumns}
+                        (ts_rank_cd(m.search_vector, to_tsquery('english', @query), 32) + (m.view_count::float / 100)) AS rank,
+                        {RatingSelectColumns}
                     FROM manga m
                     {RatingLateralJoin}
-                    WHERE m.search_vector @@ plainto_tsquery('english', @query)
+                    WHERE m.search_vector @@ to_tsquery('english', @query)
                     ORDER BY rank DESC
                     LIMIT @limit";
 
-                var mangaList = (await _postgresService.Connection.QueryAsync(searchQuery, new { query, limit }))
+                var mangaList = (await _postgresService.Connection.QueryAsync(searchQuery, new { query = GetSearchQuery(query), limit }))
                     .Select(r => new MangaSearchResponse
                     {
                         Id = (Guid)r.id,
