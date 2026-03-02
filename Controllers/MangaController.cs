@@ -153,7 +153,7 @@ namespace AkariApi.Controllers
         [ProducesResponseType(typeof(SuccessResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetMangaList(
-            [FromQuery] MangaListSortOrder sortBy = MangaListSortOrder.latest,
+            [FromQuery] MangaListSortOrder? sortBy = null,
             [FromQuery] string query = "",
             [FromQuery] string[]? genres = null,
             [FromQuery] string[]? authors = null,
@@ -167,6 +167,14 @@ namespace AkariApi.Controllers
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
             var offset = (clampedPage - 1) * clampedPageSize;
+
+            if (!string.IsNullOrWhiteSpace(query) && sortBy == null)
+            {
+                sortBy = MangaListSortOrder.search;
+            } else if (sortBy == null)
+            {
+                sortBy = MangaListSortOrder.latest; // Default sort order
+            }
 
             try
             {
