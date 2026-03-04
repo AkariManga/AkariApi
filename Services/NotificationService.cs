@@ -56,7 +56,7 @@ namespace AkariApi.Services
                     INNER JOIN user_bookmarks ub ON ps.user_id = ub.user_id
                     WHERE ub.manga_id = @mangaId";
 
-                using (var cmd = new NpgsqlCommand(query, _postgresService.Connection))
+                using (var cmd = new NpgsqlCommand(query, _postgresService.NpgsqlConnection))
                 {
                     cmd.Parameters.AddWithValue("mangaId", mangaId);
                     using (var reader = await cmd.ExecuteReaderAsync())
@@ -134,7 +134,7 @@ namespace AkariApi.Services
             {
                 await _postgresService.OpenAsync();
 
-                using (var cmd = new NpgsqlCommand("DELETE FROM push_subscriptions WHERE endpoint = ANY(@endpoints)", _postgresService.Connection))
+                using (var cmd = new NpgsqlCommand("DELETE FROM push_subscriptions WHERE endpoint = ANY(@endpoints)", _postgresService.NpgsqlConnection))
                 {
                     cmd.Parameters.AddWithValue("endpoints", endpoints.ToArray());
                     await cmd.ExecuteNonQueryAsync();

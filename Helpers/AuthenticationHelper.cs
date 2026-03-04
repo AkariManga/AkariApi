@@ -1,5 +1,6 @@
 using AkariApi.Services;
 using Dapper;
+using Lib.ServerTiming;
 using Supabase.Gotrue.Exceptions;
 
 namespace AkariApi.Helpers
@@ -38,9 +39,15 @@ namespace AkariApi.Helpers
                 return (Guid.Empty, "Access token required");
             }
 
+            var serverTiming = request.HttpContext.RequestServices.GetService<IServerTiming>();
+
             try
             {
-                var user = await supabaseService.Client.Auth.GetUser(accessToken);
+                var getUserTask = supabaseService.Client.Auth.GetUser(accessToken);
+                var user = serverTiming != null
+                    ? await serverTiming.TimeTask(getUserTask, "auth")
+                    : await getUserTask;
+
                 if (user == null || string.IsNullOrEmpty(user.Id))
                 {
                     return (Guid.Empty, "Invalid access token");
