@@ -104,7 +104,7 @@ public class AnalyticsService : IDisposable
         try
         {
             using var cmd = new NpgsqlCommand();
-            cmd.Connection = postgresService.Connection;
+            cmd.Connection = postgresService.NpgsqlConnection;
 
             var query = "INSERT INTO analytics_requests (hostname, ip_address, user_agent, path, route, method, response_time, status, created_at) VALUES ";
             var parameters = new List<NpgsqlParameter>();

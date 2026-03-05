@@ -10,12 +10,18 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.ResponseCompression;
 using System.IO.Compression;
 using Analytics;
+using Lib.AspNetCore.ServerTiming;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddServerTiming();
 
 builder.Services.AddControllers().AddJsonOptions(options =>
 {
     options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+}).AddMvcOptions(options =>
+{
+    options.Filters.Add<ServerTimingFilter>();
 });
 builder.Services.AddEndpointsApiExplorer();
 
@@ -174,6 +180,8 @@ app.UseSwaggerUI(options =>
 });
 
 app.UseCors("AllowAkari");
+
+app.UseServerTiming();
 
 // enable gzip compression
 app.UseResponseCompression();
