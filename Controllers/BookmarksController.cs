@@ -23,6 +23,67 @@ namespace AkariApi.Controllers
             _postgresService = postgresService;
         }
 
+        private static short GetPagesCount(object? pagesVal)
+        {
+            if (pagesVal is short[] arr) return (short)arr.Length;
+            if (pagesVal is short s) return s;
+            if (pagesVal == null) return 0;
+            return (short)0;
+        }
+
+        private static int ToInt32Clamp(object? value)
+        {
+            if (value == null)
+            {
+                return 0;
+            }
+
+            var longValue = Convert.ToInt64(value);
+            if (longValue > int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            if (longValue < int.MinValue)
+            {
+                return int.MinValue;
+            }
+
+            return (int)longValue;
+        }
+
+        private static long ToInt64(object? value)
+        {
+            return value == null ? 0L : Convert.ToInt64(value);
+        }
+
+        private static int? ToNullableInt(object? value)
+        {
+            if (value == null)
+            {
+                return null;
+            }
+
+            return ToInt32Clamp(value);
+        }
+
+        private static MangaChapter MapBookmarkChapter(dynamic row, string idField, string numberField, string titleField, string pagesField, string scanlatorIdField, string createdAtField, string updatedAtField)
+        {
+            var values = (IDictionary<string, object?>)row;
+            var pagesValue = values[pagesField];
+
+            return new MangaChapter
+            {
+                Id = (Guid)values[idField]!,
+                Number = (float)values[numberField]!,
+                Title = values[titleField] == null ? string.Empty : (string)values[titleField]!,
+                Pages = GetPagesCount(pagesValue),
+                ScanlatorId = ToInt32Clamp(values[scanlatorIdField]),
+                CreatedAt = values[createdAtField] == null ? DateTimeOffset.MinValue : (DateTime)values[createdAtField]!,
+                UpdatedAt = values[updatedAtField] == null ? DateTimeOffset.MinValue : (DateTime)values[updatedAtField]!,
+            };
+        }
+
         private static BookmarkResponse MapBookmarkRow(dynamic r, ref long totalCount)
         {
             var bookmark = new BookmarkResponse
@@ -38,19 +99,19 @@ namespace AkariApi.Controllers
                 Type = Enum.Parse<MangaType>((string)r.type, true),
                 Authors = (string[])r.authors,
                 Genres = (string[])r.genres,
-                Views = (int)(long)r.view_count,
+                Views = ToInt32Clamp(r.view_count),
                 Score = (decimal)r.score,
-                MalId = r.mal_id == null ? (int?)null : (int)r.mal_id,
-                AniId = r.ani_id == null ? (int?)null : (int)r.ani_id,
+                MalId = ToNullableInt(r.mal_id),
+                AniId = ToNullableInt(r.ani_id),
                 AlternativeTitles = r.alternative_titles == null ? Array.Empty<string>() : (string[])r.alternative_titles,
                 MangaCreatedAt = (DateTime)r.manga_created_at,
                 MangaUpdatedAt = (DateTime)r.manga_updated_at,
-                ChaptersBehind = (int)r.chapters_behind
+                ChaptersBehind = ToInt32Clamp(r.chapters_behind)
             };
-            totalCount = (long)r.total_count;
-            if (r.lrc_id != null) bookmark.LastReadChapter = new BookmarkChapter { Id = (Guid)r.lrc_id, Number = (float)r.lrc_number, Title = r.lrc_title == null ? string.Empty : (string)r.lrc_title, Pages = r.lrc_pages == null ? (short)0 : (short)r.lrc_pages, CreatedAt = r.lrc_created_at == null ? DateTimeOffset.MinValue : (DateTime)r.lrc_created_at, UpdatedAt = r.lrc_updated_at == null ? DateTimeOffset.MinValue : (DateTime)r.lrc_updated_at };
-            if (r.latest_id != null) bookmark.LatestChapter = new BookmarkChapter { Id = (Guid)r.latest_id, Number = (float)r.latest_number, Title = r.latest_title == null ? string.Empty : (string)r.latest_title, Pages = r.latest_pages == null ? (short)0 : (short)r.latest_pages, CreatedAt = r.latest_created_at == null ? DateTimeOffset.MinValue : (DateTime)r.latest_created_at, UpdatedAt = r.latest_updated_at == null ? DateTimeOffset.MinValue : (DateTime)r.latest_updated_at };
-            if (r.next_id != null) bookmark.NextChapter = new BookmarkChapter { Id = (Guid)r.next_id, Number = (float)r.next_number, Title = r.next_title == null ? string.Empty : (string)r.next_title, Pages = r.next_pages == null ? (short)0 : (short)r.next_pages, CreatedAt = r.next_created_at == null ? DateTimeOffset.MinValue : (DateTime)r.next_created_at, UpdatedAt = r.next_updated_at == null ? DateTimeOffset.MinValue : (DateTime)r.next_updated_at };
+            totalCount = ToInt64(r.total_count);
+            if (r.lrc_id != null) bookmark.LastReadChapter = MapBookmarkChapter(r, "lrc_id", "lrc_number", "lrc_title", "lrc_pages", "lrc_scanlator_id", "lrc_created_at", "lrc_updated_at");
+            if (r.latest_id != null) bookmark.LatestChapter = MapBookmarkChapter(r, "latest_id", "latest_number", "latest_title", "latest_pages", "latest_scanlator_id", "latest_created_at", "latest_updated_at");
+            if (r.next_id != null) bookmark.NextChapter = MapBookmarkChapter(r, "next_id", "next_number", "next_title", "next_pages", "next_scanlator_id", "next_created_at", "next_updated_at");
             return bookmark;
         }
 
@@ -90,7 +151,6 @@ namespace AkariApi.Controllers
                             ub.created_at AS bookmark_created_at,
                             ub.updated_at AS bookmark_updated_at,
                             ub.last_read_chapter_id,
-                            ub.chapters_behind,
                             m.id AS manga_id,
                             m.title,
                             m.cover,
@@ -111,51 +171,74 @@ namespace AkariApi.Controllers
                         INNER JOIN manga m ON ub.manga_id = m.id
                         WHERE ub.user_id = @userId
                     )
-                    SELECT
-                        b.*,
-                        lrc.id AS lrc_id,
-                        lrc.number AS lrc_number,
-                        lrc.title AS lrc_title,
-                        lrc.pages AS lrc_pages,
-                        lrc.created_at AS lrc_created_at,
-                        lrc.updated_at AS lrc_updated_at,
-                        latest.id AS latest_id,
-                        latest.number AS latest_number,
-                        latest.title AS latest_title,
-                        latest.pages AS latest_pages,
-                        latest.created_at AS latest_created_at,
-                        latest.updated_at AS latest_updated_at,
-                        COALESCE(next_greater.id, next_last.id) AS next_id,
-                        COALESCE(next_greater.number, next_last.number) AS next_number,
-                        COALESCE(next_greater.title, next_last.title) AS next_title,
-                        COALESCE(next_greater.pages, next_last.pages) AS next_pages,
-                        COALESCE(next_greater.created_at, next_last.created_at) AS next_created_at,
-                        COALESCE(next_greater.updated_at, next_last.updated_at) AS next_updated_at
-                    FROM base_bookmarks b
-                    LEFT JOIN chapters lrc ON lrc.id = b.last_read_chapter_id
-                    LEFT JOIN LATERAL (
-                        SELECT id, number, title, pages, created_at, updated_at
-                        FROM chapters
-                        WHERE manga_id = b.manga_id
-                        ORDER BY number DESC, created_at DESC
-                        LIMIT 1
-                    ) latest ON true
-                    LEFT JOIN LATERAL (
-                        SELECT id, number, title, pages, created_at, updated_at
-                        FROM chapters
-                        WHERE manga_id = b.manga_id
-                        AND number > COALESCE(lrc.number, -1)
-                        ORDER BY number ASC
-                        LIMIT 1
-                    ) next_greater ON true
-                    LEFT JOIN LATERAL (
-                        SELECT id, number, title, pages, created_at, updated_at
-                        FROM chapters
-                        WHERE manga_id = b.manga_id
-                        ORDER BY number DESC
-                        LIMIT 1
-                    ) next_last ON true
-                    ORDER BY (b.chapters_behind > 0) DESC, b.manga_updated_at DESC
+                    SELECT *
+                    FROM (
+                        SELECT
+                            b.*,
+                            CASE
+                                WHEN lrc.number IS NULL THEN (
+                                    SELECT COUNT(*)
+                                    FROM chapters c_count
+                                    WHERE c_count.manga_id = b.manga_id
+                                )
+                                ELSE (
+                                    SELECT COUNT(*)
+                                    FROM chapters c_count
+                                    WHERE c_count.manga_id = b.manga_id
+                                      AND c_count.scanlator_id = lrc.scanlator_id
+                                      AND c_count.number > lrc.number
+                                )
+                            END AS chapters_behind,
+                            lrc.id AS lrc_id,
+                            lrc.number AS lrc_number,
+                            lrc.title AS lrc_title,
+                            lrc.pages AS lrc_pages,
+                            lrc.scanlator_id AS lrc_scanlator_id,
+                            lrc.created_at AS lrc_created_at,
+                            lrc.updated_at AS lrc_updated_at,
+                            latest.id AS latest_id,
+                            latest.number AS latest_number,
+                            latest.title AS latest_title,
+                            latest.pages AS latest_pages,
+                            latest.scanlator_id AS latest_scanlator_id,
+                            latest.created_at AS latest_created_at,
+                            latest.updated_at AS latest_updated_at,
+                            COALESCE(next_greater.id, next_last.id) AS next_id,
+                            COALESCE(next_greater.number, next_last.number) AS next_number,
+                            COALESCE(next_greater.title, next_last.title) AS next_title,
+                            COALESCE(next_greater.pages, next_last.pages) AS next_pages,
+                            COALESCE(next_greater.scanlator_id, next_last.scanlator_id) AS next_scanlator_id,
+                            COALESCE(next_greater.created_at, next_last.created_at) AS next_created_at,
+                            COALESCE(next_greater.updated_at, next_last.updated_at) AS next_updated_at
+                        FROM base_bookmarks b
+                        LEFT JOIN chapters lrc ON lrc.id = b.last_read_chapter_id
+                        LEFT JOIN LATERAL (
+                            SELECT id, number, title, pages, scanlator_id, created_at, updated_at
+                            FROM chapters
+                            WHERE manga_id = b.manga_id
+                              AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
+                            ORDER BY number DESC, created_at DESC
+                            LIMIT 1
+                        ) latest ON true
+                        LEFT JOIN LATERAL (
+                            SELECT id, number, title, pages, scanlator_id, created_at, updated_at
+                            FROM chapters
+                            WHERE manga_id = b.manga_id
+                            AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
+                            AND number > COALESCE(lrc.number, -1)
+                            ORDER BY number ASC
+                            LIMIT 1
+                        ) next_greater ON true
+                        LEFT JOIN LATERAL (
+                            SELECT id, number, title, pages, scanlator_id, created_at, updated_at
+                            FROM chapters
+                            WHERE manga_id = b.manga_id
+                              AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
+                            ORDER BY number DESC
+                            LIMIT 1
+                        ) next_last ON true
+                    ) bookmark_rows
+                    ORDER BY (bookmark_rows.chapters_behind > 0) DESC, bookmark_rows.manga_updated_at DESC
                     LIMIT @limit OFFSET @offset";
 
                 var bookmarks = new List<BookmarkResponse>();
@@ -240,45 +323,57 @@ namespace AkariApi.Controllers
                         m.created_at as manga_created_at,
                         m.updated_at as manga_updated_at,
                         COUNT(*) OVER() as total_count,
-                        COALESCE(
-                            (SELECT COUNT(*)
-                             FROM chapters c
-                             WHERE c.manga_id = m.id
-                             AND c.number > COALESCE((SELECT number FROM chapters WHERE id = ub.last_read_chapter_id), 0)),
-                            (SELECT COUNT(*) FROM chapters WHERE manga_id = m.id)
-                        ) as chapters_behind,
+                        CASE
+                            WHEN lrc.number IS NULL THEN (
+                                SELECT COUNT(*)
+                                FROM chapters c
+                                WHERE c.manga_id = m.id
+                            )
+                            ELSE (
+                                SELECT COUNT(*)
+                                FROM chapters c
+                                WHERE c.manga_id = m.id
+                                  AND c.scanlator_id = lrc.scanlator_id
+                                  AND c.number > lrc.number
+                            )
+                        END as chapters_behind,
                         lrc.id as lrc_id,
                         lrc.number as lrc_number,
                         lrc.title as lrc_title,
                         lrc.pages as lrc_pages,
+                        lrc.scanlator_id as lrc_scanlator_id,
                         lrc.created_at as lrc_created_at,
                         lrc.updated_at as lrc_updated_at,
                         latest.id as latest_id,
                         latest.number as latest_number,
                         latest.title as latest_title,
                         latest.pages as latest_pages,
+                        latest.scanlator_id as latest_scanlator_id,
                         latest.created_at as latest_created_at,
                         latest.updated_at as latest_updated_at,
                         next.id as next_id,
                         next.number as next_number,
                         next.title as next_title,
                         next.pages as next_pages,
+                        next.scanlator_id as next_scanlator_id,
                         next.created_at as next_created_at,
                         next.updated_at as next_updated_at
                     FROM user_bookmarks ub
                     INNER JOIN manga m ON ub.manga_id = m.id
                     LEFT JOIN chapters lrc ON lrc.id = ub.last_read_chapter_id
                     LEFT JOIN LATERAL (
-                        SELECT id, number, title, pages, created_at, updated_at
+                        SELECT id, number, title, pages, scanlator_id, created_at, updated_at
                         FROM chapters
                         WHERE manga_id = m.id
+                          AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
                         ORDER BY number DESC, created_at DESC
                         LIMIT 1
                     ) latest ON true
                     LEFT JOIN LATERAL (
-                        SELECT id, number, title, pages, created_at, updated_at
+                        SELECT id, number, title, pages, scanlator_id, created_at, updated_at
                         FROM chapters
                         WHERE manga_id = m.id
+                        AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
                         AND (
                             CASE
                                 WHEN lrc.number IS NULL OR lrc.number = (SELECT MIN(number) FROM chapters WHERE manga_id = m.id)
@@ -453,7 +548,7 @@ namespace AkariApi.Controllers
                 await _postgresService.OpenAsync();
 
                 var query = @"
-                    SELECT c.id, c.number, c.title, c.pages, c.created_at, c.updated_at
+                    SELECT c.id, c.number, c.title, c.pages, c.scanlator_id, c.created_at, c.updated_at
                     FROM user_bookmarks ub
                     INNER JOIN chapters c ON ub.last_read_chapter_id = c.id
                     WHERE ub.user_id = @userId AND ub.manga_id = @mangaId";
@@ -472,6 +567,7 @@ namespace AkariApi.Controllers
                     Number = (float)row.number,
                     Title = (string)row.title,
                     Pages = Convert.ToInt16(row.pages),
+                    ScanlatorId = ToInt32Clamp(row.scanlator_id),
                     CreatedAt = (DateTime)row.created_at,
                     UpdatedAt = (DateTime)row.updated_at
                 };

@@ -153,6 +153,8 @@ namespace AkariApi.Models
 
         public int? AniId { get; set; }
 
+        public int? PreferredScanlatorId { get; set; }
+
         [Required]
         public DateTimeOffset CreatedAt { get; set; }
 
@@ -179,10 +181,33 @@ namespace AkariApi.Models
         public short Pages { get; set; }
 
         [Required]
+        public int ScanlatorId { get; set; }
+
+        [Required]
         public DateTimeOffset CreatedAt { get; set; }
 
         [Required]
         public DateTimeOffset UpdatedAt { get; set; }
+    }
+
+    public class Scanlator
+    {
+        [Required]
+        public int Id { get; set; }
+
+        [Required]
+        public string Name { get; set; } = string.Empty;
+    }
+
+    public class MangaChapterResponse
+    {
+        [Required]
+        public List<Scanlator> Scanlators { get; set; } = new List<Scanlator>();
+
+        [Required]
+        public List<MangaChapter> Chapters { get; set; } = new List<MangaChapter>();
+
+        public int? PreferredScanlatorId { get; set; }
     }
 
     public class MangaDetailResponse : MangaResponse

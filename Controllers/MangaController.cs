@@ -70,11 +70,11 @@ namespace AkariApi.Controllers
 
         private static MangaRatingResponse MapRatingFromRow(dynamic r)
         {
-            static int ToInt(object? v) => v == null ? 0 : (int)Math.Min((long)v, int.MaxValue);
+            static int ToInt(object? v) => ToInt32Clamp(v);
             return new MangaRatingResponse
             {
                 Average = r.avg_rating == null ? 0m : (decimal)r.avg_rating,
-                Total = r.total_ratings == null ? 0 : (int)Math.Min((long)r.total_ratings, int.MaxValue),
+                Total = ToInt32Clamp(r.total_ratings),
                 Distribution = new MangaRatingDistribution
                 {
                     Score1  = ToInt(r.rating_1_count),
@@ -91,6 +91,43 @@ namespace AkariApi.Controllers
             };
         }
 
+        private static int ToInt32Clamp(object? value)
+        {
+            if (value == null)
+            {
+                return 0;
+            }
+
+            var longValue = Convert.ToInt64(value);
+            if (longValue > int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            if (longValue < int.MinValue)
+            {
+                return int.MinValue;
+            }
+
+            return (int)longValue;
+        }
+
+        private static long ToInt64(object? value)
+        {
+            return value == null ? 0L : Convert.ToInt64(value);
+        }
+
+        private static int? ToNullableInt(object? value)
+        {
+            if (value == null)
+            {
+                return null;
+            }
+
+            var longValue = Convert.ToInt64(value);
+            return longValue > int.MaxValue ? int.MaxValue : (int)longValue;
+        }
+
         private static MangaResponse MapMangaRow(dynamic r)
         {
             return new MangaResponse
@@ -103,11 +140,12 @@ namespace AkariApi.Controllers
                 Type = r.type == null ? MangaType.Manga : Enum.Parse<MangaType>((string)r.type, true),
                 Authors = r.authors == null ? Array.Empty<string>() : (string[])r.authors,
                 Genres = r.genres == null ? Array.Empty<string>() : (string[])r.genres,
-                Views = r.view_count == null ? 0 : (r.view_count is long lv ? (lv > int.MaxValue ? int.MaxValue : (int)lv) : (int)r.view_count),
+                Views = ToInt32Clamp(r.view_count),
                 Rating = MapRatingFromRow(r),
                 AlternativeTitles = r.alternative_titles == null ? null : (string[])r.alternative_titles,
-                MalId = r.mal_id == null ? null : (int?)(long)r.mal_id > int.MaxValue ? int.MaxValue : (int?)(long)r.mal_id,
-                AniId = r.ani_id == null ? null : (int?)(long)r.ani_id > int.MaxValue ? int.MaxValue : (int?)(long)r.ani_id,
+                MalId = ToNullableInt(r.mal_id),
+                AniId = ToNullableInt(r.ani_id),
+                PreferredScanlatorId = ToNullableInt(r.preferred_scanlator_id),
                 CreatedAt = r.created_at == null ? DateTimeOffset.UtcNow : (DateTimeOffset)(DateTime)r.created_at,
                 UpdatedAt = r.updated_at == null ? DateTimeOffset.UtcNow : (DateTimeOffset)(DateTime)r.updated_at,
             };
@@ -210,6 +248,7 @@ SELECT
     m.genres,
     m.mal_id,
     m.ani_id,
+    m.preferred_scanlator_id,
     m.created_at,
     m.updated_at,
     m.alternative_titles,
@@ -264,7 +303,7 @@ LIMIT @p_limit OFFSET @p_offset";
                     mangaList.Add(manga);
                     if (totalCount == 0)
                     {
-                        totalCount = (long)r.total_count;
+                        totalCount = ToInt64(r.total_count);
                     }
                 }
 
@@ -329,6 +368,7 @@ LIMIT @p_limit OFFSET @p_offset";
                             m.genres,
                             m.mal_id,
                             m.ani_id,
+                            m.preferred_scanlator_id,
                             m.created_at,
                             m.updated_at,
                             m.alternative_titles,
@@ -339,7 +379,7 @@ LIMIT @p_limit OFFSET @p_offset";
                         GROUP BY
                             m.id, m.title, m.cover, m.description,
                             m.status, m.type, m.authors, m.genres,
-                            m.mal_id, m.ani_id, m.created_at, m.updated_at,
+                            m.mal_id, m.ani_id, m.preferred_scanlator_id, m.created_at, m.updated_at,
                             m.alternative_titles
                         ORDER BY COUNT(v.id) DESC
                     )
@@ -378,7 +418,7 @@ LIMIT @p_limit OFFSET @p_offset";
                     mangaList.Add(manga);
                     if (totalCount == 0)
                     {
-                        totalCount = (long)r.total_count;
+                        totalCount = ToInt64(r.total_count);
                     }
                 }
 
@@ -414,7 +454,7 @@ LIMIT @p_limit OFFSET @p_offset";
                 await _postgresService.OpenAsync();
 
                 var query = $@"
-                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles,
+                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.preferred_scanlator_id, m.created_at, m.updated_at, m.alternative_titles,
                            {RatingSelectColumns}
                     FROM manga m
                     {RatingLateralJoin}
@@ -455,7 +495,7 @@ LIMIT @p_limit OFFSET @p_offset";
                 await _postgresService.OpenAsync();
 
                 var query = $@"
-                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles,
+                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.preferred_scanlator_id, m.created_at, m.updated_at, m.alternative_titles,
                            {RatingSelectColumns},
                            chapters_data.chapters_json
                     FROM manga m
@@ -483,10 +523,11 @@ LIMIT @p_limit OFFSET @p_offset";
                         Type = Enum.Parse<MangaType>((string)row.type),
                         Authors = (string[])row.authors,
                         Genres = (string[])row.genres,
-                        Views = (long)row.view_count > int.MaxValue ? int.MaxValue : (int)(long)row.view_count,
+                        Views = ToInt32Clamp(row.view_count),
                         Rating = MapRatingFromRow(row),
-                        MalId = row.mal_id == null ? null : ((long)row.mal_id > int.MaxValue ? int.MaxValue : (int?)(long)row.mal_id),
-                        AniId = row.ani_id == null ? null : ((long)row.ani_id > int.MaxValue ? int.MaxValue : (int?)(long)row.ani_id),
+                        MalId = ToNullableInt(row.mal_id),
+                        AniId = ToNullableInt(row.ani_id),
+                        PreferredScanlatorId = ToNullableInt(row.preferred_scanlator_id),
                         CreatedAt = (DateTime)row.created_at,
                         UpdatedAt = (DateTime)row.updated_at,
                         AlternativeTitles = row.alternative_titles == null ? null : (string[])row.alternative_titles
@@ -526,7 +567,7 @@ LIMIT @p_limit OFFSET @p_offset";
         /// <returns>A list of chapters for the manga.</returns>
         [HttpGet("{id}/chapters")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
-        [ProducesResponseType(typeof(SuccessResponse<List<MangaChapter>>), 200)]
+        [ProducesResponseType(typeof(SuccessResponse<MangaChapterResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
         public async Task<IActionResult> GetMangaChapters(Guid id)
@@ -536,26 +577,71 @@ LIMIT @p_limit OFFSET @p_offset";
                 await _postgresService.OpenAsync();
 
                 var rows = await _postgresService.Connection.QueryAsync(
-                    "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @id ORDER BY number DESC",
+                    @"
+                    SELECT
+                        m.preferred_scanlator_id,
+                        c.id,
+                        c.title,
+                        c.number,
+                        c.pages,
+                        c.scanlator_id,
+                        c.updated_at,
+                        c.created_at,
+                        s.name AS scanlator_name
+                    FROM manga m
+                    LEFT JOIN chapters c ON c.manga_id = m.id
+                    LEFT JOIN scanlators s ON s.id = c.scanlator_id
+                    WHERE m.id = @id
+                    ORDER BY c.number DESC, c.created_at DESC",
                     new { id });
 
-                var chapters = rows.Select(r =>
+                var rowList = rows.ToList();
+
+                if (rowList.Count == 0)
                 {
-                    var pagesVal = (object?)r.pages;
-                    return new MangaChapter
+                    await _postgresService.CloseAsync();
+                    return NotFound(ErrorResponse.Create("Manga not found", status: 404));
+                }
+
+                var chapters = rowList
+                    .Where(r => r.id != null)
+                    .Select(r =>
                     {
-                        Id = (Guid)r.id,
-                        Title = (string)r.title,
-                        Number = (float)r.number,
-                        Pages = GetPagesCount(pagesVal),
-                        UpdatedAt = (DateTime)r.updated_at,
-                        CreatedAt = (DateTime)r.created_at,
-                    };
-                }).ToList();
+                        var pagesVal = (object?)r.pages;
+                        return new MangaChapter
+                        {
+                            Id = (Guid)r.id,
+                            Title = (string)r.title,
+                            Number = (float)r.number,
+                            Pages = GetPagesCount(pagesVal),
+                            ScanlatorId = ToInt32Clamp(r.scanlator_id),
+                            UpdatedAt = (DateTime)r.updated_at,
+                            CreatedAt = (DateTime)r.created_at,
+                        };
+                    })
+                    .ToList();
+
+                var scanlators = rowList
+                    .Where(r => r.scanlator_id != null && r.scanlator_name != null)
+                    .GroupBy(r => (Id: ToInt32Clamp(r.scanlator_id), Name: (string)r.scanlator_name))
+                    .Select(g => new Scanlator
+                    {
+                        Id = g.Key.Id,
+                        Name = g.Key.Name,
+                    })
+                    .OrderBy(s => s.Name)
+                    .ToList();
+
+                var response = new MangaChapterResponse
+                {
+                    Chapters = chapters,
+                    Scanlators = scanlators,
+                    PreferredScanlatorId = ToNullableInt(rowList[0].preferred_scanlator_id),
+                };
 
                 await _postgresService.CloseAsync();
 
-                return Ok(SuccessResponse<List<MangaChapter>>.Create(chapters));
+                return Ok(SuccessResponse<MangaChapterResponse>.Create(response));
             }
             catch (Exception ex)
             {
@@ -592,7 +678,7 @@ LIMIT @p_limit OFFSET @p_offset";
                 }
 
                 var query = $@"
-                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.alternative_titles, m.mal_id, m.ani_id, m.created_at, m.updated_at,
+                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.alternative_titles, m.mal_id, m.ani_id, m.preferred_scanlator_id, m.created_at, m.updated_at,
                            {RatingSelectColumns}
                     FROM manga_similarities ms
                     JOIN manga m ON ms.similar_manga_id = m.id
@@ -790,6 +876,7 @@ SELECT
     m.alternative_titles,
     m.mal_id,
     m.ani_id,
+    m.preferred_scanlator_id,
     m.created_at,
     m.updated_at,
     {RatingSelectColumns}
@@ -993,7 +1080,7 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var mangaQuery = $"SELECT id, title, cover, description, status, type, authors, genres, view_count, mal_id, ani_id, created_at, updated_at, alternative_titles, {RatingSelectColumns} FROM manga m {RatingLateralJoin} WHERE mal_id = @id";
+                var mangaQuery = $"SELECT id, title, cover, description, status, type, authors, genres, view_count, mal_id, ani_id, preferred_scanlator_id, created_at, updated_at, alternative_titles, {RatingSelectColumns} FROM manga m {RatingLateralJoin} WHERE mal_id = @id";
                 var mangaRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(mangaQuery, new { id });
 
                 if (mangaRow == null)
@@ -1012,17 +1099,18 @@ LIMIT @p_limit;";
                     Type = Enum.Parse<MangaType>((string)mangaRow.type),
                     Authors = (string[])mangaRow.authors,
                     Genres = (string[])mangaRow.genres,
-                    Views = (long)mangaRow.view_count > int.MaxValue ? int.MaxValue : (int)(long)mangaRow.view_count,
+                    Views = ToInt32Clamp(mangaRow.view_count),
                     Rating = MapRatingFromRow(mangaRow),
-                    MalId = mangaRow.mal_id == null ? null : ((long)mangaRow.mal_id > int.MaxValue ? int.MaxValue : (int?)(long)mangaRow.mal_id),
-                    AniId = mangaRow.ani_id == null ? null : ((long)mangaRow.ani_id > int.MaxValue ? int.MaxValue : (int?)(long)mangaRow.ani_id),
+                    MalId = ToNullableInt(mangaRow.mal_id),
+                    AniId = ToNullableInt(mangaRow.ani_id),
+                    PreferredScanlatorId = ToNullableInt(mangaRow.preferred_scanlator_id),
                     CreatedAt = (DateTime)mangaRow.created_at,
                     UpdatedAt = (DateTime)mangaRow.updated_at,
                     AlternativeTitles = mangaRow.alternative_titles == null ? null : (string[])mangaRow.alternative_titles
                 };
 
                 var chapterRows = await _postgresService.Connection.QueryAsync(
-                    "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number",
+                    "SELECT id, title, number, pages, scanlator_id, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number",
                     new { mangaId = manga.Id });
 
                 var chapters = chapterRows.Select(r =>
@@ -1034,6 +1122,7 @@ LIMIT @p_limit;";
                         Title = (string)r.title,
                         Number = (float)r.number,
                         Pages = GetPagesCount(pagesVal),
+                        ScanlatorId = (int)r.scanlator_id,
                         UpdatedAt = (DateTime)r.updated_at,
                         CreatedAt = (DateTime)r.created_at
                     };
@@ -1078,7 +1167,7 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var query = $"SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles, {RatingSelectColumns} FROM manga m {RatingLateralJoin} WHERE m.mal_id = ANY(@malIds)";
+                var query = $"SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.preferred_scanlator_id, m.created_at, m.updated_at, m.alternative_titles, {RatingSelectColumns} FROM manga m {RatingLateralJoin} WHERE m.mal_id = ANY(@malIds)";
                 var mangaList = (await _postgresService.Connection.QueryAsync(query, new { malIds = request.MalIds.ToArray() }))
                     .Select(r => (MangaResponse)MapMangaRow(r))
                     .ToList();
@@ -1110,7 +1199,7 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var mangaQuery = $"SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles, {RatingSelectColumns} FROM manga m {RatingLateralJoin} WHERE m.ani_id = @id";
+                var mangaQuery = $"SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.preferred_scanlator_id, m.created_at, m.updated_at, m.alternative_titles, {RatingSelectColumns} FROM manga m {RatingLateralJoin} WHERE m.ani_id = @id";
                 var mangaRow = await _postgresService.Connection.QueryFirstOrDefaultAsync(mangaQuery, new { id });
 
                 if (mangaRow == null)
@@ -1129,17 +1218,18 @@ LIMIT @p_limit;";
                     Type = Enum.Parse<MangaType>((string)mangaRow.type),
                     Authors = (string[])mangaRow.authors,
                     Genres = (string[])mangaRow.genres,
-                    Views = (long)mangaRow.view_count > int.MaxValue ? int.MaxValue : (int)(long)mangaRow.view_count,
+                    Views = ToInt32Clamp(mangaRow.view_count),
                     Rating = MapRatingFromRow(mangaRow),
-                    MalId = mangaRow.mal_id == null ? null : ((long)mangaRow.mal_id > int.MaxValue ? int.MaxValue : (int?)(long)mangaRow.mal_id),
-                    AniId = mangaRow.ani_id == null ? null : ((long)mangaRow.ani_id > int.MaxValue ? int.MaxValue : (int?)(long)mangaRow.ani_id),
+                    MalId = ToNullableInt(mangaRow.mal_id),
+                    AniId = ToNullableInt(mangaRow.ani_id),
+                    PreferredScanlatorId = ToNullableInt(mangaRow.preferred_scanlator_id),
                     CreatedAt = (DateTime)mangaRow.created_at,
                     UpdatedAt = (DateTime)mangaRow.updated_at,
                     AlternativeTitles = mangaRow.alternative_titles == null ? null : (string[])mangaRow.alternative_titles
                 };
 
                 var chapterRows = await _postgresService.Connection.QueryAsync(
-                    "SELECT id, title, number, pages, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number",
+                    "SELECT id, title, number, pages, scanlator_id, updated_at, created_at FROM chapters WHERE manga_id = @mangaId ORDER BY number",
                     new { mangaId = manga.Id });
 
                 var chapters = chapterRows.Select(r =>
@@ -1151,6 +1241,7 @@ LIMIT @p_limit;";
                         Title = (string)r.title,
                         Number = (float)r.number,
                         Pages = GetPagesCount(pagesVal),
+                        ScanlatorId = (int)r.scanlator_id,
                         UpdatedAt = (DateTime)r.updated_at,
                         CreatedAt = (DateTime)r.created_at
                     };
@@ -1195,7 +1286,7 @@ LIMIT @p_limit;";
             {
                 await _postgresService.OpenAsync();
 
-                var query = $"SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles, {RatingSelectColumns} FROM manga m {RatingLateralJoin} WHERE m.ani_id = ANY(@aniIds)";
+                var query = $"SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.preferred_scanlator_id, m.created_at, m.updated_at, m.alternative_titles, {RatingSelectColumns} FROM manga m {RatingLateralJoin} WHERE m.ani_id = ANY(@aniIds)";
                 var mangaList = (await _postgresService.Connection.QueryAsync(query, new { aniIds = request.AniIds.ToArray() }))
                     .Select(r => (MangaResponse)MapMangaRow(r))
                     .ToList();
@@ -1235,6 +1326,7 @@ LIMIT @p_limit;";
                     c.manga_id,
                     c.title,
                     c.number,
+                    c.scanlator_id,
                     (
                         SELECT json_agg(
                             json_build_object('value', ch.number::text, 'label', ch.title)
@@ -1324,7 +1416,7 @@ LIMIT @p_limit;";
                 await _postgresService.OpenAsync();
 
                 var searchQuery = $@"
-                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.created_at, m.updated_at, m.alternative_titles,
+                    SELECT m.id, m.title, m.cover, m.description, m.status, m.type, m.authors, m.genres, m.view_count, m.mal_id, m.ani_id, m.preferred_scanlator_id, m.created_at, m.updated_at, m.alternative_titles,
                         (ts_rank_cd(m.search_vector, to_tsquery('english', @query), 32) + (m.view_count::float / 100)) AS rank,
                         {RatingSelectColumns}
                     FROM manga m
@@ -1344,11 +1436,12 @@ LIMIT @p_limit;";
                         Type = r.type == null ? MangaType.Manga : Enum.Parse<MangaType>((string)r.type, true),
                         Authors = r.authors == null ? Array.Empty<string>() : (string[])r.authors,
                         Genres = r.genres == null ? Array.Empty<string>() : (string[])r.genres,
-                        Views = r.view_count == null ? 0 : (r.view_count is long lv ? (lv > int.MaxValue ? int.MaxValue : (int)lv) : (int)r.view_count),
+                        Views = ToInt32Clamp(r.view_count),
                         Rating = MapRatingFromRow(r),
                         AlternativeTitles = r.alternative_titles == null ? null : (string[])r.alternative_titles,
-                        MalId = r.mal_id == null ? null : (int?)(long)r.mal_id > int.MaxValue ? int.MaxValue : (int?)(long)r.mal_id,
-                        AniId = r.ani_id == null ? null : (int?)(long)r.ani_id > int.MaxValue ? int.MaxValue : (int?)(long)r.ani_id,
+                        MalId = ToNullableInt(r.mal_id),
+                        AniId = ToNullableInt(r.ani_id),
+                        PreferredScanlatorId = ToNullableInt(r.preferred_scanlator_id),
                         CreatedAt = r.created_at == null ? DateTimeOffset.UtcNow : (DateTimeOffset)(DateTime)r.created_at,
                         UpdatedAt = r.updated_at == null ? DateTimeOffset.UtcNow : (DateTimeOffset)(DateTime)r.updated_at,
                         Rank = r.rank == null ? 0.0 : (double)r.rank,
@@ -1399,7 +1492,7 @@ LIMIT @p_limit;";
                     ids.Add((Guid)r.id);
                     if (totalCount == 0)
                     {
-                        totalCount = (long)r.total;
+                        totalCount = ToInt64(r.total);
                     }
                 }
 
@@ -1466,7 +1559,7 @@ LIMIT @p_limit;";
                     var chapterNumbers = r.chapter_numbers == null ? Array.Empty<float>() : (float[])r.chapter_numbers;
                     if (totalCount == 0)
                     {
-                        totalCount = (long)r.total;
+                        totalCount = ToInt64(r.total);
                     }
                     pairs.Add(new MangaChapterIdsPair
                     {

@@ -26,6 +26,9 @@ namespace AkariApi.Models
         [Required]
         public float Number { get; set; }
 
+        [Required]
+        public int ScanlatorId { get; set; }
+
         public DateTimeOffset CreatedAt { get; set; }
 
         public DateTimeOffset UpdatedAt { get; set; }
@@ -44,22 +47,6 @@ namespace AkariApi.Models
 
         [Required]
         public required double ChapterNumber { get; set; }
-    }
-
-    public class BookmarkChapter
-    {
-        [Required]
-        public Guid Id { get; set; }
-        [Required]
-        public float Number { get; set; }
-        [Required]
-        public string Title { get; set; } = string.Empty;
-        [Required]
-        public short Pages { get; set; }
-        [Required]
-        public DateTimeOffset CreatedAt { get; set; }
-        [Required]
-        public DateTimeOffset UpdatedAt { get; set; }
     }
 
     public class BookmarkResponse
@@ -100,15 +87,15 @@ namespace AkariApi.Models
         [Required]
         public DateTimeOffset MangaUpdatedAt { get; set; }
         [Required]
-        public BookmarkChapter LastReadChapter { get; set; } = new BookmarkChapter();
+        public MangaChapter LastReadChapter { get; set; } = new MangaChapter();
         [Required]
-        public BookmarkChapter LatestChapter { get; set; } = new BookmarkChapter();
+        public MangaChapter LatestChapter { get; set; } = new MangaChapter();
         [Required]
-        public BookmarkChapter NextChapter { get; set; } = new BookmarkChapter();
+        public MangaChapter NextChapter { get; set; } = new MangaChapter();
         [Required]
         public int ChaptersBehind { get; set; }
         [JsonIgnore]
-        public List<BookmarkChapter> Chapters { get; set; } = new List<BookmarkChapter>();
+        public List<MangaChapter> Chapters { get; set; } = new List<MangaChapter>();
     }
 
     public class BookmarkListResponse : PaginatedResponse<BookmarkResponse>
