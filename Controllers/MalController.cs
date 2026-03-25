@@ -84,7 +84,7 @@ namespace AkariApi.Controllers
         /// <returns>The updated manga list status.</returns>
         [HttpPost("mangalist")]
         [RequireMalTokenRefresh]
-        [ProducesResponseType(typeof(SuccessResponse<MalMangaListStatus>), 200)]
+        [ProducesResponseType(typeof(SuccessResponse<MalListStatus>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -114,12 +114,12 @@ namespace AkariApi.Controllers
 
             if (response.IsSuccessStatusCode)
             {
-                var data = JsonSerializer.Deserialize<MalMangaListStatus>(responseContent, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, PropertyNameCaseInsensitive = true });
+                var data = JsonSerializer.Deserialize<MalListStatus>(responseContent, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower, PropertyNameCaseInsensitive = true });
                 if (data == null)
                 {
                     return StatusCode(500, ErrorResponse.Create("Invalid response from MAL"));
                 }
-                return Ok(SuccessResponse<MalMangaListStatus>.Create(data));
+                return Ok(SuccessResponse<MalListStatus>.Create(data));
             }
             else
             {
