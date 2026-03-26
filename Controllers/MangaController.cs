@@ -128,6 +128,11 @@ namespace AkariApi.Controllers
             return longValue > int.MaxValue ? int.MaxValue : (int)longValue;
         }
 
+        private static float? ToNullableFloat(object? value)
+        {
+            return value == null ? null : Convert.ToSingle(value);
+        }
+
         private static MangaResponse MapMangaRow(dynamic r)
         {
             return new MangaResponse
@@ -1307,79 +1312,126 @@ LIMIT @p_limit;";
         /// </summary>
         /// <param name="id">The unique identifier of the manga.</param>
         /// <param name="subId">The chapter number.</param>
+        /// <param name="scanlatorId">Optional scanlator identifier to select a specific chapter release.</param>
         /// <returns>The chapter details.</returns>
         [HttpGet("{id}/{subId}")]
         [CacheControl(CacheDuration.TenMinutes, CacheDuration.OneHour)]
         [ProducesResponseType(typeof(SuccessResponse<ChapterResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> GetChapter(Guid id, float subId)
+        public async Task<IActionResult> GetChapter(Guid id, float subId, [FromQuery, Range(1, int.MaxValue)] int? scanlatorId = null)
         {
             try
             {
                 await _postgresService.OpenAsync();
 
-                var rpcQuery = @"
-                SELECT to_jsonb(t) FROM (
-                SELECT
-                    c.id,
-                    c.manga_id,
-                    c.title,
-                    c.number,
-                    c.scanlator_id,
-                    (
-                        SELECT json_agg(
-                            json_build_object('value', ch.number::text, 'label', ch.title)
-                            ORDER BY ch.number DESC
-                        )
-                        FROM public.chapters ch
-                        WHERE ch.manga_id = c.manga_id
-                    ) AS chapters,
-                    c.pages,
-                    (
-                        SELECT ch_next.number
-                        FROM public.chapters ch_next
-                        WHERE ch_next.manga_id = c.manga_id AND ch_next.number > c.number
-                        ORDER BY ch_next.number ASC
-                        LIMIT 1
-                    ) AS next_chapter,
-                    (
-                        SELECT ch_prev.number
-                        FROM public.chapters ch_prev
-                        WHERE ch_prev.manga_id = c.manga_id AND ch_prev.number < c.number
-                        ORDER BY ch_prev.number DESC
-                        LIMIT 1
-                    ) AS last_chapter,
-                    c.images,
-                    m.title AS manga_title,
-                    m.type::text,
-                    m.mal_id,
-                    m.ani_id
-                FROM public.chapters c
-                JOIN public.manga m ON m.id = c.manga_id
-                WHERE c.manga_id = @_manga_id
-                    AND c.number = @_number
-                ) t";
+                var chapterQuery = @"
+WITH target_chapter AS (
+    SELECT
+        c.id,
+        c.manga_id,
+        c.title,
+        c.number,
+        c.scanlator_id,
+        c.pages,
+        c.images,
+        c.created_at
+    FROM public.chapters c
+    JOIN public.manga m ON m.id = c.manga_id
+    WHERE c.manga_id = @p_manga_id
+      AND c.number = @p_number
+      AND (@p_scanlator_id::int IS NULL OR c.scanlator_id = @p_scanlator_id)
+    ORDER BY
+        CASE
+            WHEN @p_scanlator_id::int IS NOT NULL THEN 0
+            WHEN m.preferred_scanlator_id IS NOT NULL AND c.scanlator_id = m.preferred_scanlator_id THEN 0
+            ELSE 1
+        END,
+        c.created_at DESC,
+        c.id DESC
+    LIMIT 1
+)
+SELECT
+    tc.id,
+    tc.manga_id,
+    tc.title,
+    tc.number,
+    tc.pages,
+    tc.images,
+    m.title AS manga_title,
+    m.type::text AS type,
+    m.mal_id,
+    m.ani_id,
+    (
+        SELECT json_agg(
+            json_build_object('value', ch.number::text, 'label', ch.title)
+            ORDER BY ch.number DESC, ch.created_at DESC
+        )
+        FROM public.chapters ch
+        WHERE ch.manga_id = tc.manga_id
+          AND ch.scanlator_id IS NOT DISTINCT FROM tc.scanlator_id
+    ) AS chapters_json,
+    (
+        SELECT ch_next.number
+        FROM public.chapters ch_next
+        WHERE ch_next.manga_id = tc.manga_id
+          AND ch_next.scanlator_id IS NOT DISTINCT FROM tc.scanlator_id
+          AND ch_next.number > tc.number
+        ORDER BY ch_next.number ASC, ch_next.created_at ASC
+        LIMIT 1
+    ) AS next_chapter,
+    (
+        SELECT ch_prev.number
+        FROM public.chapters ch_prev
+        WHERE ch_prev.manga_id = tc.manga_id
+          AND ch_prev.scanlator_id IS NOT DISTINCT FROM tc.scanlator_id
+          AND ch_prev.number < tc.number
+        ORDER BY ch_prev.number DESC, ch_prev.created_at DESC
+        LIMIT 1
+    ) AS last_chapter
+FROM target_chapter tc
+JOIN public.manga m ON m.id = tc.manga_id";
 
-                var content = await _postgresService.Connection.ExecuteScalarAsync<string?>(rpcQuery, new { _manga_id = id, _number = subId });
+                var row = await _postgresService.Connection.QueryFirstOrDefaultAsync(chapterQuery, new
+                {
+                    p_manga_id = id,
+                    p_number = subId,
+                    p_scanlator_id = scanlatorId
+                });
 
                 await _postgresService.CloseAsync();
 
-                if (string.IsNullOrEmpty(content))
+                if (row == null)
                     return NotFound(ErrorResponse.Create("Chapter not found", status: 404));
 
-                ChapterResponse? chapter = null;
+                List<ChapterOption> chapters;
                 try
                 {
-                    chapter = JsonSerializer.Deserialize<ChapterResponse>(content, _jsonOptions);
+                    chapters = row.chapters_json == null
+                        ? new List<ChapterOption>()
+                        : JsonSerializer.Deserialize<List<ChapterOption>>((string)row.chapters_json, _jsonOptions) ?? new List<ChapterOption>();
                 }
                 catch (JsonException)
                 {
-                    return StatusCode(500, ErrorResponse.Create("Failed to parse chapter data", "Invalid JSON response from database"));
+                    return StatusCode(500, ErrorResponse.Create("Failed to parse chapter data", "Invalid chapter options JSON response from database"));
                 }
 
-                if (chapter == null)
-                    return NotFound(ErrorResponse.Create("Chapter not found", status: 404));
+                var chapter = new ChapterResponse
+                {
+                    Id = (Guid)row.id,
+                    MangaId = (Guid)row.manga_id,
+                    Title = row.title == null ? string.Empty : (string)row.title,
+                    Number = row.number == null ? 0f : Convert.ToSingle(row.number),
+                    Pages = GetPagesCount((object?)row.pages),
+                    Images = row.images == null ? Array.Empty<string>() : (string[])row.images,
+                    Chapters = chapters,
+                    MangaTitle = row.manga_title == null ? string.Empty : (string)row.manga_title,
+                    Type = row.type == null ? MangaType.Manga : Enum.Parse<MangaType>((string)row.type, true),
+                    LastChapter = ToNullableFloat(row.last_chapter),
+                    NextChapter = ToNullableFloat(row.next_chapter),
+                    MalId = ToNullableInt(row.mal_id),
+                    AniId = ToNullableInt(row.ani_id),
+                };
 
                 return Ok(SuccessResponse<ChapterResponse>.Create(chapter));
             }
