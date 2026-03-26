@@ -238,7 +238,7 @@ namespace AkariApi.Controllers
                             LIMIT 1
                         ) next_last ON true
                     ) bookmark_rows
-                    ORDER BY (bookmark_rows.chapters_behind > 0) DESC, bookmark_rows.manga_updated_at DESC
+                    ORDER BY (bookmark_rows.chapters_behind > 0) DESC, COALESCE(bookmark_rows.latest_created_at, bookmark_rows.bookmark_updated_at) DESC
                     LIMIT @limit OFFSET @offset";
 
                 var bookmarks = new List<BookmarkResponse>();
