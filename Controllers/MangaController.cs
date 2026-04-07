@@ -344,6 +344,8 @@ LIMIT @p_limit OFFSET @p_offset";
         /// Get popular manga
         /// </summary>
         /// <param name="days">The number of days to look back for views.</param>
+        /// <param name="genres">Filter by genres.</param>
+        /// <param name="excludedGenres">Exclude by genres.</param>
         /// <param name="page">The page number.</param>
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A list of popular manga.</returns>
@@ -351,7 +353,12 @@ LIMIT @p_limit OFFSET @p_offset";
         [CacheControl(CacheDuration.OneHour, CacheDuration.TwelveHours)]
         [ProducesResponseType(typeof(SuccessResponse<MangaListResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
-        public async Task<IActionResult> GetPopularManga([FromQuery, Range(1, 365)] int days = 30, [FromQuery, Range(1, int.MaxValue)] int page = 1, [FromQuery, Range(1, 100)] int pageSize = 20)
+        public async Task<IActionResult> GetPopularManga(
+            [FromQuery, Range(1, 365)] int days = 30,
+            [FromQuery] string[]? genres = null,
+            [FromQuery] string[]? excludedGenres = null,
+            [FromQuery, Range(1, int.MaxValue)] int page = 1,
+            [FromQuery, Range(1, 100)] int pageSize = 20)
         {
             var (clampedPage, clampedPageSize) = PaginationHelper.ClampPagination(page, pageSize);
             var offset = (clampedPage - 1) * clampedPageSize;
@@ -381,6 +388,8 @@ LIMIT @p_limit OFFSET @p_offset";
                         FROM public.manga m
                         JOIN public.manga_views v ON v.manga_id = m.id
                         WHERE v.viewed_at > now() - (@p_days || ' days')::interval
+                            AND (@p_genres::text[] IS NULL OR @p_genres::text[] <@ m.genres)
+                            AND (@p_excluded_genres::text[] IS NULL OR NOT (m.genres && @p_excluded_genres::text[]))
                         GROUP BY
                             m.id, m.title, m.cover, m.description,
                             m.status, m.type, m.authors, m.genres,
@@ -413,7 +422,14 @@ LIMIT @p_limit OFFSET @p_offset";
                     ORDER BY p.view_count DESC
                     LIMIT @p_limit OFFSET @p_offset";
 
-                var rows = await _postgresService.Connection.QueryAsync(popularQuery, new { p_days = days, p_limit = clampedPageSize, p_offset = offset });
+                    var rows = await _postgresService.Connection.QueryAsync(popularQuery, new
+                    {
+                        p_days = days,
+                        p_genres = genres != null && genres.Length > 0 ? genres : null,
+                        p_excluded_genres = excludedGenres != null && excludedGenres.Length > 0 ? excludedGenres : null,
+                        p_limit = clampedPageSize,
+                        p_offset = offset
+                    });
                 var mangaList = new List<MangaResponse>();
                 long totalCount = 0;
 
