@@ -145,7 +145,7 @@ namespace AkariApi.Controllers
                 var offset = (clampedPage - 1) * clampedPageSize;
 
                 var bookmarksQuery = @"
-                    base_bookmarks AS (
+                    WITH base_bookmarks AS (
                         SELECT
                             ub.id                AS bookmark_id,
                             ub.created_at        AS bookmark_created_at,
