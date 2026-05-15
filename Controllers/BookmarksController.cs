@@ -145,13 +145,13 @@ namespace AkariApi.Controllers
                 var offset = (clampedPage - 1) * clampedPageSize;
 
                 var bookmarksQuery = @"
-                    WITH base_bookmarks AS (
+                    base_bookmarks AS (
                         SELECT
-                            ub.id AS bookmark_id,
-                            ub.created_at AS bookmark_created_at,
-                            ub.updated_at AS bookmark_updated_at,
+                            ub.id                AS bookmark_id,
+                            ub.created_at        AS bookmark_created_at,
+                            ub.updated_at        AS bookmark_updated_at,
                             ub.last_read_chapter_id,
-                            m.id AS manga_id,
+                            m.id                 AS manga_id,
                             m.title,
                             m.cover,
                             m.description,
@@ -164,17 +164,35 @@ namespace AkariApi.Controllers
                             m.mal_id,
                             m.ani_id,
                             m.alternative_titles,
-                            m.created_at AS manga_created_at,
-                            m.updated_at AS manga_updated_at,
-                            COUNT(*) OVER() AS total_count
+                            m.created_at         AS manga_created_at,
+                            m.updated_at         AS manga_updated_at,
+                            COUNT(*) OVER ()     AS total_count
                         FROM user_bookmarks ub
                         INNER JOIN manga m ON ub.manga_id = m.id
                         WHERE ub.user_id = @userId
-                    )
-                    SELECT *
-                    FROM (
+                    ),
+                    enriched AS MATERIALIZED (
                         SELECT
-                            b.*,
+                            b.bookmark_id,
+                            b.bookmark_created_at,
+                            b.bookmark_updated_at,
+                            b.last_read_chapter_id,
+                            b.manga_id,
+                            b.title,
+                            b.cover,
+                            b.description,
+                            b.status,
+                            b.type,
+                            b.authors,
+                            b.genres,
+                            b.view_count,
+                            b.score,
+                            b.mal_id,
+                            b.ani_id,
+                            b.alternative_titles,
+                            b.manga_created_at,
+                            b.manga_updated_at,
+                            b.total_count,
                             CASE
                                 WHEN lrc.number IS NULL THEN (
                                     SELECT COUNT(*)
@@ -185,38 +203,39 @@ namespace AkariApi.Controllers
                                     SELECT COUNT(*)
                                     FROM chapters c_count
                                     WHERE c_count.manga_id = b.manga_id
-                                      AND c_count.scanlator_id = lrc.scanlator_id
-                                      AND c_count.number > lrc.number
+                                    AND c_count.number > lrc.number
+                                    AND c_count.scanlator_id = lrc.scanlator_id
                                 )
-                            END AS chapters_behind,
-                            lrc.id AS lrc_id,
-                            lrc.number AS lrc_number,
-                            lrc.title AS lrc_title,
-                            lrc.pages AS lrc_pages,
-                            lrc.scanlator_id AS lrc_scanlator_id,
-                            lrc.created_at AS lrc_created_at,
-                            lrc.updated_at AS lrc_updated_at,
-                            latest.id AS latest_id,
-                            latest.number AS latest_number,
-                            latest.title AS latest_title,
-                            latest.pages AS latest_pages,
-                            latest.scanlator_id AS latest_scanlator_id,
-                            latest.created_at AS latest_created_at,
-                            latest.updated_at AS latest_updated_at,
-                            COALESCE(next_greater.id, next_last.id) AS next_id,
-                            COALESCE(next_greater.number, next_last.number) AS next_number,
-                            COALESCE(next_greater.title, next_last.title) AS next_title,
-                            COALESCE(next_greater.pages, next_last.pages) AS next_pages,
-                            COALESCE(next_greater.scanlator_id, next_last.scanlator_id) AS next_scanlator_id,
-                            COALESCE(next_greater.created_at, next_last.created_at) AS next_created_at,
-                            COALESCE(next_greater.updated_at, next_last.updated_at) AS next_updated_at
+                            END                  AS chapters_behind,
+                            lrc.id               AS lrc_id,
+                            lrc.number           AS lrc_number,
+                            lrc.title            AS lrc_title,
+                            lrc.pages            AS lrc_pages,
+                            lrc.scanlator_id     AS lrc_scanlator_id,
+                            lrc.created_at       AS lrc_created_at,
+                            lrc.updated_at       AS lrc_updated_at,
+                            latest.id            AS latest_id,
+                            latest.number        AS latest_number,
+                            latest.title         AS latest_title,
+                            latest.pages         AS latest_pages,
+                            latest.scanlator_id  AS latest_scanlator_id,
+                            latest.created_at    AS latest_created_at,
+                            latest.updated_at    AS latest_updated_at,
+                            COALESCE(next_ch.id,           latest.id)           AS next_id,
+                            COALESCE(next_ch.number,       latest.number)       AS next_number,
+                            COALESCE(next_ch.title,        latest.title)        AS next_title,
+                            COALESCE(next_ch.pages,        latest.pages)        AS next_pages,
+                            COALESCE(next_ch.scanlator_id, latest.scanlator_id) AS next_scanlator_id,
+                            COALESCE(next_ch.created_at,   latest.created_at)   AS next_created_at,
+                            COALESCE(next_ch.updated_at,   latest.updated_at)   AS next_updated_at
                         FROM base_bookmarks b
-                        LEFT JOIN chapters lrc ON lrc.id = b.last_read_chapter_id
+                        LEFT JOIN chapters lrc
+                            ON lrc.id = b.last_read_chapter_id
                         LEFT JOIN LATERAL (
                             SELECT id, number, title, pages, scanlator_id, created_at, updated_at
                             FROM chapters
                             WHERE manga_id = b.manga_id
-                              AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
+                            AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
                             ORDER BY number DESC, created_at DESC
                             LIMIT 1
                         ) latest ON true
@@ -228,17 +247,13 @@ namespace AkariApi.Controllers
                             AND number > COALESCE(lrc.number, -1)
                             ORDER BY number ASC
                             LIMIT 1
-                        ) next_greater ON true
-                        LEFT JOIN LATERAL (
-                            SELECT id, number, title, pages, scanlator_id, created_at, updated_at
-                            FROM chapters
-                            WHERE manga_id = b.manga_id
-                              AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
-                            ORDER BY number DESC
-                            LIMIT 1
-                        ) next_last ON true
-                    ) bookmark_rows
-                    ORDER BY (bookmark_rows.chapters_behind > 0) DESC, COALESCE(bookmark_rows.latest_created_at, bookmark_rows.bookmark_updated_at) DESC
+                        ) next_ch ON true
+                    )
+                    SELECT *
+                    FROM enriched
+                    ORDER BY
+                        (chapters_behind > 0) DESC,
+                        COALESCE(latest_created_at, bookmark_updated_at) DESC
                     LIMIT @limit OFFSET @offset";
 
                 var bookmarks = new List<BookmarkResponse>();
