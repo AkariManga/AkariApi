@@ -122,7 +122,7 @@ namespace AkariApi.Controllers
         /// <param name="pageSize">The number of items per page.</param>
         /// <returns>A list of the user's bookmarks.</returns>
         [HttpGet]
-        [CacheControl(CacheDuration.FiveMinutes, CacheDuration.FiveMinutes, false)]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
         [ProducesResponseType(typeof(SuccessResponse<BookmarkListResponse>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
@@ -437,7 +437,7 @@ namespace AkariApi.Controllers
         /// </summary>
         /// <returns>The number of unread bookmarked manga.</returns>
         [HttpGet("unread")]
-        [CacheControl(CacheDuration.OneMinute, CacheDuration.OneMinute, false)]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
         [ProducesResponseType(typeof(SuccessResponse<int>), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         [ProducesResponseType(typeof(ErrorResponse), 500)]
