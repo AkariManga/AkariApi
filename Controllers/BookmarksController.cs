@@ -195,12 +195,12 @@ namespace AkariApi.Controllers
                             b.total_count,
                             CASE
                                 WHEN lrc.number IS NULL THEN (
-                                    SELECT COUNT(*)
+                                    SELECT COUNT(DISTINCT c_count.number)
                                     FROM chapters c_count
                                     WHERE c_count.manga_id = b.manga_id
                                 )
                                 ELSE (
-                                    SELECT COUNT(*)
+                                    SELECT COUNT(DISTINCT c_count.number)
                                     FROM chapters c_count
                                     WHERE c_count.manga_id = b.manga_id
                                     AND c_count.number > lrc.number
@@ -339,12 +339,12 @@ namespace AkariApi.Controllers
                         COUNT(*) OVER() as total_count,
                         CASE
                             WHEN lrc.number IS NULL THEN (
-                                SELECT COUNT(*)
+                                SELECT COUNT(DISTINCT c.number)
                                 FROM chapters c
                                 WHERE c.manga_id = m.id
                             )
                             ELSE (
-                                SELECT COUNT(*)
+                                SELECT COUNT(DISTINCT c.number)
                                 FROM chapters c
                                 WHERE c.manga_id = m.id
                                   AND c.number > lrc.number
