@@ -18,6 +18,18 @@ namespace AkariApi.Models
 
         [Required]
         public required string Value { get; set; } = string.Empty;
+
+        [Required]
+        public required int ScanlatorId { get; set; }
+    }
+
+    public class ChapterNavigation
+    {
+        [Required]
+        public required float Number { get; set; }
+
+        [Required]
+        public required int ScanlatorId { get; set; }
     }
 
     public class ChapterResponse
@@ -50,9 +62,9 @@ namespace AkariApi.Models
         [Required]
         public required string MangaTitle { get; set; } = string.Empty;
 
-        public float? LastChapter { get; set; }
+        public ChapterNavigation? LastChapter { get; set; }
 
-        public float? NextChapter { get; set; }
+        public ChapterNavigation? NextChapter { get; set; }
 
         public int? MalId { get; set; }
 

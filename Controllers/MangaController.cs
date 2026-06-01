@@ -1380,29 +1380,38 @@ SELECT
     m.ani_id,
     (
         SELECT json_agg(
-            json_build_object('value', ch.number::text, 'label', ch.title)
-            ORDER BY ch.number DESC, ch.created_at DESC
+            json_build_object('value', ch.number::text, 'label', ch.title, 'scanlator_id', ch.scanlator_id)
+            ORDER BY ch.number DESC
         )
-        FROM public.chapters ch
-        WHERE ch.manga_id = tc.manga_id
-          AND ch.scanlator_id IS NOT DISTINCT FROM tc.scanlator_id
+        FROM (
+            SELECT DISTINCT ON (ch.number) ch.number, ch.title, ch.scanlator_id, ch.created_at
+            FROM public.chapters ch
+            WHERE ch.manga_id = tc.manga_id
+            ORDER BY ch.number,
+                CASE WHEN ch.scanlator_id = tc.scanlator_id THEN 0 ELSE 1 END,
+                ch.created_at DESC
+        ) ch
     ) AS chapters_json,
     (
-        SELECT ch_next.number
+        SELECT json_build_object('number', ch_next.number, 'scanlator_id', ch_next.scanlator_id)
         FROM public.chapters ch_next
         WHERE ch_next.manga_id = tc.manga_id
-          AND ch_next.scanlator_id IS NOT DISTINCT FROM tc.scanlator_id
           AND ch_next.number > tc.number
-        ORDER BY ch_next.number ASC, ch_next.created_at ASC
+        ORDER BY
+            CASE WHEN ch_next.scanlator_id = tc.scanlator_id THEN 0 ELSE 1 END,
+            ch_next.number ASC,
+            ch_next.created_at ASC
         LIMIT 1
     ) AS next_chapter,
     (
-        SELECT ch_prev.number
+        SELECT json_build_object('number', ch_prev.number, 'scanlator_id', ch_prev.scanlator_id)
         FROM public.chapters ch_prev
         WHERE ch_prev.manga_id = tc.manga_id
-          AND ch_prev.scanlator_id IS NOT DISTINCT FROM tc.scanlator_id
           AND ch_prev.number < tc.number
-        ORDER BY ch_prev.number DESC, ch_prev.created_at DESC
+        ORDER BY
+            CASE WHEN ch_prev.scanlator_id = tc.scanlator_id THEN 0 ELSE 1 END,
+            ch_prev.number DESC,
+            ch_prev.created_at DESC
         LIMIT 1
     ) AS last_chapter
 FROM target_chapter tc
@@ -1432,6 +1441,11 @@ JOIN public.manga m ON m.id = tc.manga_id";
                     return StatusCode(500, ErrorResponse.Create("Failed to parse chapter data", "Invalid chapter options JSON response from database"));
                 }
 
+                ChapterNavigation? DeserializeNavigation(object? json) =>
+                    json is string s && !string.IsNullOrEmpty(s)
+                        ? JsonSerializer.Deserialize<ChapterNavigation>(s, _jsonOptions)
+                        : null;
+
                 var chapter = new ChapterResponse
                 {
                     Id = (Guid)row.id,
@@ -1443,8 +1457,8 @@ JOIN public.manga m ON m.id = tc.manga_id";
                     Chapters = chapters,
                     MangaTitle = row.manga_title == null ? string.Empty : (string)row.manga_title,
                     Type = row.type == null ? MangaType.Manga : Enum.Parse<MangaType>((string)row.type, true),
-                    LastChapter = ToNullableFloat(row.last_chapter),
-                    NextChapter = ToNullableFloat(row.next_chapter),
+                    LastChapter = DeserializeNavigation(row.last_chapter),
+                    NextChapter = DeserializeNavigation(row.next_chapter),
                     MalId = ToNullableInt(row.mal_id),
                     AniId = ToNullableInt(row.ani_id),
                 };

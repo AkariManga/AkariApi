@@ -204,7 +204,6 @@ namespace AkariApi.Controllers
                                     FROM chapters c_count
                                     WHERE c_count.manga_id = b.manga_id
                                     AND c_count.number > lrc.number
-                                    AND c_count.scanlator_id = lrc.scanlator_id
                                 )
                             END                  AS chapters_behind,
                             lrc.id               AS lrc_id,
@@ -235,7 +234,6 @@ namespace AkariApi.Controllers
                             SELECT id, number, title, pages, scanlator_id, created_at, updated_at
                             FROM chapters
                             WHERE manga_id = b.manga_id
-                            AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
                             ORDER BY number DESC, created_at DESC
                             LIMIT 1
                         ) latest ON true
@@ -243,9 +241,10 @@ namespace AkariApi.Controllers
                             SELECT id, number, title, pages, scanlator_id, created_at, updated_at
                             FROM chapters
                             WHERE manga_id = b.manga_id
-                            AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
                             AND number > COALESCE(lrc.number, -1)
-                            ORDER BY number ASC
+                            ORDER BY
+                                CASE WHEN lrc.scanlator_id IS NOT NULL AND scanlator_id = lrc.scanlator_id THEN 0 ELSE 1 END,
+                                number ASC
                             LIMIT 1
                         ) next_ch ON true
                     )
@@ -348,7 +347,6 @@ namespace AkariApi.Controllers
                                 SELECT COUNT(*)
                                 FROM chapters c
                                 WHERE c.manga_id = m.id
-                                  AND c.scanlator_id = lrc.scanlator_id
                                   AND c.number > lrc.number
                             )
                         END as chapters_behind,
@@ -380,7 +378,6 @@ namespace AkariApi.Controllers
                         SELECT id, number, title, pages, scanlator_id, created_at, updated_at
                         FROM chapters
                         WHERE manga_id = m.id
-                          AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
                         ORDER BY number DESC, created_at DESC
                         LIMIT 1
                     ) latest ON true
@@ -388,7 +385,6 @@ namespace AkariApi.Controllers
                         SELECT id, number, title, pages, scanlator_id, created_at, updated_at
                         FROM chapters
                         WHERE manga_id = m.id
-                        AND (lrc.scanlator_id IS NULL OR scanlator_id = lrc.scanlator_id)
                         AND (
                             CASE
                                 WHEN lrc.number IS NULL OR lrc.number = (SELECT MIN(number) FROM chapters WHERE manga_id = m.id)
@@ -398,7 +394,9 @@ namespace AkariApi.Controllers
                                 ELSE number > lrc.number
                             END
                         )
-                        ORDER BY number ASC, created_at ASC
+                        ORDER BY
+                            CASE WHEN lrc.scanlator_id IS NOT NULL AND scanlator_id = lrc.scanlator_id THEN 0 ELSE 1 END,
+                            number ASC, created_at ASC
                         LIMIT 1
                     ) next ON true
                     WHERE ub.user_id = @userId
