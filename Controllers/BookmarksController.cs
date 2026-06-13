@@ -4,6 +4,7 @@ using AkariApi.Services;
 using AkariApi.Attributes;
 using System.ComponentModel.DataAnnotations;
 using AkariApi.Helpers;
+using System.Text.Json;
 using Dapper;
 
 namespace AkariApi.Controllers
@@ -654,7 +655,7 @@ namespace AkariApi.Controllers
 
                 var intervalParam = $"{range} {intervalUnit}";
 
-                var multiQuery = @"
+                var singleQuery = @"
                     WITH base AS (
                         SELECT id, manga_id, read_at
                         FROM reading_history
@@ -664,39 +665,31 @@ namespace AkariApi.Controllers
                         SELECT b.id, b.manga_id, b.read_at, m.genres
                         FROM base b
                         INNER JOIN manga m ON b.manga_id = m.id
-                    ),
-                    aggregates AS (
-                        SELECT COUNT(*) AS total_reads, COUNT(DISTINCT manga_id) AS unique_manga
-                        FROM base
-                    ),
-                    read_dates AS (
-                        SELECT DISTINCT date_trunc('day', read_at)::date AS read_date
-                        FROM base
-                    ),
-                    genre_stats AS (
-                        SELECT unnest(genres) AS genre, COUNT(*) AS count
-                        FROM enriched
-                        GROUP BY genre
-                        ORDER BY count DESC
-                        LIMIT 10
-                    ),
-                    dow_stats AS (
-                        SELECT EXTRACT(DOW FROM read_at)::int AS dow, COUNT(*) AS count
-                        FROM base
-                        GROUP BY dow
-                        ORDER BY dow
-                    ),
-                    hour_stats AS (
-                        SELECT EXTRACT(HOUR FROM read_at)::int AS hour, COUNT(*) AS count
-                        FROM base
-                        GROUP BY hour
-                        ORDER BY hour
                     )
-                    SELECT total_reads, unique_manga FROM aggregates;
-                    SELECT read_date FROM read_dates ORDER BY read_date;
-                    SELECT genre, count FROM genre_stats;
-                    SELECT dow, count FROM dow_stats;
-                    SELECT hour, count FROM hour_stats;";
+                    SELECT
+                        (SELECT COUNT(*) FROM base) AS total_reads,
+                        (SELECT COUNT(DISTINCT manga_id) FROM base) AS unique_manga,
+                        (SELECT COALESCE(json_agg(read_date ORDER BY read_date), '[]'::json) FROM (
+                            SELECT DISTINCT date_trunc('day', read_at)::date AS read_date
+                            FROM base
+                        ) rd) AS read_dates_json,
+                        (SELECT COALESCE(json_agg(json_build_object('Genre', g.genre, 'Count', g.count) ORDER BY g.count DESC), '[]'::json) FROM (
+                            SELECT unnest(genres) AS genre, COUNT(*) AS count
+                            FROM enriched
+                            GROUP BY genre
+                            ORDER BY count DESC
+                            LIMIT 10
+                        ) g) AS top_genres_json,
+                        (SELECT COALESCE(json_agg(json_build_object('DayOfWeek', d.dow, 'Count', d.count) ORDER BY d.dow), '[]'::json) FROM (
+                            SELECT EXTRACT(DOW FROM read_at)::int AS dow, COUNT(*) AS count
+                            FROM base
+                            GROUP BY dow
+                        ) d) AS reads_by_dow_json,
+                        (SELECT COALESCE(json_agg(json_build_object('Hour', h.hour, 'Count', h.count) ORDER BY h.hour), '[]'::json) FROM (
+                            SELECT EXTRACT(HOUR FROM read_at)::int AS hour, COUNT(*) AS count
+                            FROM base
+                            GROUP BY hour
+                        ) h) AS reads_by_hour_json";
 
                 int totalReads, uniqueManga, currentStreak, longestStreak;
                 double avgPerDay;
@@ -705,24 +698,28 @@ namespace AkariApi.Controllers
                 List<DayOfWeekReadCount> readsByDayOfWeek;
                 List<HourReadCount> readsByHour;
 
-                using (var multi = await _postgresService.Connection.QueryMultipleAsync(multiQuery, new { userId, interval = intervalParam }))
+                var row = await _postgresService.Connection.QueryFirstOrDefaultAsync(singleQuery, new { userId, interval = intervalParam });
+                if (row == null)
                 {
-                    var agg = await multi.ReadFirstOrDefaultAsync();
-                    if (agg == null)
-                    {
-                        totalReads = 0;
-                        uniqueManga = 0;
-                    }
-                    else
-                    {
-                        var aggVals = (IDictionary<string, object?>)agg;
-                        totalReads = Convert.ToInt32(aggVals["total_reads"]);
-                        uniqueManga = Convert.ToInt32(aggVals["unique_manga"]);
-                    }
-
+                    totalReads = 0;
+                    uniqueManga = 0;
+                    avgPerDay = 0;
+                    currentStreak = 0;
+                    longestStreak = 0;
+                    sortedDates = new List<DateTime>();
+                    topGenres = new List<GenreReadCount>();
+                    readsByDayOfWeek = new List<DayOfWeekReadCount>();
+                    readsByHour = new List<HourReadCount>();
+                }
+                else
+                {
+                    var vals = (IDictionary<string, object?>)row;
+                    totalReads = Convert.ToInt32(vals["total_reads"]);
+                    uniqueManga = Convert.ToInt32(vals["unique_manga"]);
                     avgPerDay = range > 0 ? Math.Round((double)totalReads / range, 2) : 0;
 
-                    sortedDates = (await multi.ReadAsync<DateTime>()).ToList();
+                    var datesJson = Convert.ToString(vals["read_dates_json"]) ?? "[]";
+                    sortedDates = JsonSerializer.Deserialize<List<DateTime>>(datesJson, new JsonSerializerOptions()) ?? new();
 
                     currentStreak = 0;
                     var today = DateTime.UtcNow.Date;
@@ -751,38 +748,14 @@ namespace AkariApi.Controllers
                         if (temp > longestStreak) longestStreak = temp;
                     }
 
-                    topGenres = new List<GenreReadCount>();
-                    foreach (var r in await multi.ReadAsync())
-                    {
-                        var vals = (IDictionary<string, object?>)r;
-                        topGenres.Add(new GenreReadCount
-                        {
-                            Genre = (string)vals["genre"]!,
-                            Count = Convert.ToInt32(vals["count"])
-                        });
-                    }
+                    var genresJson = Convert.ToString(vals["top_genres_json"]) ?? "[]";
+                    topGenres = JsonSerializer.Deserialize<List<GenreReadCount>>(genresJson, new JsonSerializerOptions()) ?? new();
 
-                    readsByDayOfWeek = new List<DayOfWeekReadCount>();
-                    foreach (var r in await multi.ReadAsync())
-                    {
-                        var vals = (IDictionary<string, object?>)r;
-                        readsByDayOfWeek.Add(new DayOfWeekReadCount
-                        {
-                            DayOfWeek = Convert.ToInt32(vals["dow"]),
-                            Count = Convert.ToInt32(vals["count"])
-                        });
-                    }
+                    var dowJson = Convert.ToString(vals["reads_by_dow_json"]) ?? "[]";
+                    readsByDayOfWeek = JsonSerializer.Deserialize<List<DayOfWeekReadCount>>(dowJson, new JsonSerializerOptions()) ?? new();
 
-                    readsByHour = new List<HourReadCount>();
-                    foreach (var r in await multi.ReadAsync())
-                    {
-                        var vals = (IDictionary<string, object?>)r;
-                        readsByHour.Add(new HourReadCount
-                        {
-                            Hour = Convert.ToInt32(vals["hour"]),
-                            Count = Convert.ToInt32(vals["count"])
-                        });
-                    }
+                    var hourJson = Convert.ToString(vals["reads_by_hour_json"]) ?? "[]";
+                    readsByHour = JsonSerializer.Deserialize<List<HourReadCount>>(hourJson, new JsonSerializerOptions()) ?? new();
                 }
 
                 await _postgresService.CloseAsync();
