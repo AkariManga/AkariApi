@@ -526,8 +526,14 @@ namespace AkariApi.Controllers
 
                 await _postgresService.Connection.ExecuteAsync(upsertQuery, new { userId, mangaId, chapterId = chapterId.Value });
 
-                await _postgresService.Connection.ExecuteAsync(
-                    "INSERT INTO reading_history (user_id, manga_id, chapter_id) VALUES (@userId, @mangaId, @chapterId)",
+                await _postgresService.Connection.ExecuteAsync(@"
+                    INSERT INTO reading_history (user_id, manga_id, chapter_id)
+                    SELECT @userId, @mangaId, @chapterId
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM reading_history
+                        WHERE user_id = @userId AND chapter_id = @chapterId
+                          AND date_trunc('day', read_at) = date_trunc('day', now())
+                    )",
                     new { userId, mangaId, chapterId = chapterId.Value });
 
                 await _postgresService.CloseAsync();
@@ -967,20 +973,14 @@ namespace AkariApi.Controllers
                             END as chapter_id
                         FROM input_data i
                     ),
-                    upserted AS (
-                        INSERT INTO user_bookmarks (user_id, manga_id, last_read_chapter_id, updated_at, created_at)
-                        SELECT @userId, manga_id, chapter_id, NOW(), NOW()
-                        FROM resolved_chapters
-                        WHERE chapter_id IS NOT NULL
-                        ON CONFLICT (user_id, manga_id)
-                        DO UPDATE SET
-                            last_read_chapter_id = EXCLUDED.last_read_chapter_id,
-                            updated_at = NOW()
-                        RETURNING user_id, manga_id, last_read_chapter_id
-                    )
-                    INSERT INTO reading_history (user_id, manga_id, chapter_id)
-                    SELECT user_id, manga_id, last_read_chapter_id
-                    FROM upserted";
+                    INSERT INTO user_bookmarks (user_id, manga_id, last_read_chapter_id, updated_at, created_at)
+                    SELECT @userId, manga_id, chapter_id, NOW(), NOW()
+                    FROM resolved_chapters
+                    WHERE chapter_id IS NOT NULL
+                    ON CONFLICT (user_id, manga_id)
+                    DO UPDATE SET
+                        last_read_chapter_id = EXCLUDED.last_read_chapter_id,
+                        updated_at = NOW()";
 
                 await _postgresService.Connection.ExecuteAsync(batchQuery, new
                 {
