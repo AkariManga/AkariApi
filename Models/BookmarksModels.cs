@@ -3,6 +3,17 @@ using System.Text.Json.Serialization;
 
 namespace AkariApi.Models
 {
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public enum HistoryBucket
+    {
+        Hour,
+        Day,
+        Week,
+        Month,
+        Year
+    }
+
+
     public class UpdateBookmarkRequest
     {
         public double? ChapterNumber { get; set; }
@@ -100,5 +111,57 @@ namespace AkariApi.Models
 
     public class BookmarkListResponse : PaginatedResponse<BookmarkResponse>
     {
+    }
+
+    public class ReadingHistoryTimelineEntry
+    {
+        [Required]
+        public DateTimeOffset Date { get; set; }
+        [Required]
+        public int Reads { get; set; }
+    }
+
+    public class ReadingHistoryStatsResponse
+    {
+        [Required]
+        public int TotalReads { get; set; }
+        [Required]
+        public int UniqueManga { get; set; }
+        [Required]
+        public double AvgPerDay { get; set; }
+        [Required]
+        public int CurrentStreak { get; set; }
+        [Required]
+        public int LongestStreak { get; set; }
+        [Required]
+        public List<GenreReadCount> TopGenres { get; set; } = new();
+        [Required]
+        public List<DayOfWeekReadCount> ReadsByDayOfWeek { get; set; } = new();
+        [Required]
+        public List<HourReadCount> ReadsByHour { get; set; } = new();
+    }
+
+    public class GenreReadCount
+    {
+        [Required]
+        public string Genre { get; set; } = string.Empty;
+        [Required]
+        public int Count { get; set; }
+    }
+
+    public class DayOfWeekReadCount
+    {
+        [Required]
+        public int DayOfWeek { get; set; }
+        [Required]
+        public int Count { get; set; }
+    }
+
+    public class HourReadCount
+    {
+        [Required]
+        public int Hour { get; set; }
+        [Required]
+        public int Count { get; set; }
     }
 }

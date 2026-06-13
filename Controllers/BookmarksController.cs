@@ -526,6 +526,10 @@ namespace AkariApi.Controllers
 
                 await _postgresService.Connection.ExecuteAsync(upsertQuery, new { userId, mangaId, chapterId = chapterId.Value });
 
+                await _postgresService.Connection.ExecuteAsync(
+                    "INSERT INTO reading_history (user_id, manga_id, chapter_id) VALUES (@userId, @mangaId, @chapterId)",
+                    new { userId, mangaId, chapterId = chapterId.Value });
+
                 await _postgresService.CloseAsync();
                 return Ok(SuccessResponse<string>.Create("Bookmark updated successfully"));
             }
@@ -533,6 +537,265 @@ namespace AkariApi.Controllers
             {
                 await _postgresService.CloseAsync();
                 return StatusCode(500, ErrorResponse.Create("Failed to update bookmark", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Get reading history timeline for charts
+        /// </summary>
+        /// <param name="bucket">Time bucket: Hour, Day, Week, Month, Year</param>
+        /// <param name="range">Number of buckets to look back</param>
+        /// <returns>Aggregated read counts per time bucket.</returns>
+        [HttpGet("history")]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [ProducesResponseType(typeof(SuccessResponse<List<ReadingHistoryTimelineEntry>>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetReadingHistoryTimeline(
+            [FromQuery] HistoryBucket bucket = HistoryBucket.Day,
+            [FromQuery, Range(1, int.MaxValue)] int range = 30)
+        {
+            var (truncUnit, intervalUnit) = bucket switch
+            {
+                HistoryBucket.Hour => ("hour", "hours"),
+                HistoryBucket.Day => ("day", "days"),
+                HistoryBucket.Week => ("week", "weeks"),
+                HistoryBucket.Month => ("month", "months"),
+                HistoryBucket.Year => ("year", "years"),
+                _ => ("day", "days")
+            };
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
+                }
+
+                await _postgresService.OpenAsync();
+
+                var query = $@"
+                    SELECT date_trunc('{truncUnit}', rh.read_at) AS date,
+                           COUNT(*) AS reads
+                    FROM reading_history rh
+                    WHERE rh.user_id = @userId
+                      AND rh.read_at > now() - (@range || ' {intervalUnit}')::interval
+                    GROUP BY date_trunc('{truncUnit}', rh.read_at)
+                    ORDER BY date ASC";
+
+                var entries = new List<ReadingHistoryTimelineEntry>();
+
+                var rows = await _postgresService.Connection.QueryAsync(query, new { userId, range });
+                foreach (var r in rows)
+                {
+                    var values = (IDictionary<string, object?>)r;
+                    entries.Add(new ReadingHistoryTimelineEntry
+                    {
+                        Date = (DateTime)values["date"]!,
+                        Reads = Convert.ToInt32(values["reads"])
+                    });
+                }
+
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<List<ReadingHistoryTimelineEntry>>.Create(entries));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve reading history", ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Get reading history stats for charts
+        /// </summary>
+        /// <param name="bucket">Time bucket: Hour, Day, Week, Month, Year</param>
+        /// <param name="range">Number of buckets to look back</param>
+        /// <returns>Aggregated reading habit statistics.</returns>
+        [HttpGet("history/stats")]
+        [CacheControl(CacheDuration.NoCache, CacheDuration.NoCache, false)]
+        [ProducesResponseType(typeof(SuccessResponse<ReadingHistoryStatsResponse>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 401)]
+        [ProducesResponseType(typeof(ErrorResponse), 500)]
+        public async Task<IActionResult> GetReadingHistoryStats(
+            [FromQuery] HistoryBucket bucket = HistoryBucket.Day,
+            [FromQuery, Range(1, int.MaxValue)] int range = 30)
+        {
+            var (truncUnit, intervalUnit) = bucket switch
+            {
+                HistoryBucket.Hour => ("hour", "hours"),
+                HistoryBucket.Day => ("day", "days"),
+                HistoryBucket.Week => ("week", "weeks"),
+                HistoryBucket.Month => ("month", "months"),
+                HistoryBucket.Year => ("year", "years"),
+                _ => ("day", "days")
+            };
+
+            try
+            {
+                await _supabaseService.InitializeAsync();
+
+                var (userId, errorMessage) = await AuthenticationHelper.AuthenticateAndSetSessionAsync(Request, _supabaseService);
+                if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    return Unauthorized(ErrorResponse.Create("Unauthorized", errorMessage, 401));
+                }
+
+                await _postgresService.OpenAsync();
+
+                var intervalParam = $"{range} {intervalUnit}";
+
+                var multiQuery = @"
+                    WITH base AS (
+                        SELECT id, manga_id, read_at
+                        FROM reading_history
+                        WHERE user_id = @userId AND read_at > now() - @interval::interval
+                    ),
+                    enriched AS (
+                        SELECT b.id, b.manga_id, b.read_at, m.genres
+                        FROM base b
+                        INNER JOIN manga m ON b.manga_id = m.id
+                    ),
+                    aggregates AS (
+                        SELECT COUNT(*) AS total_reads, COUNT(DISTINCT manga_id) AS unique_manga
+                        FROM base
+                    ),
+                    read_dates AS (
+                        SELECT DISTINCT date_trunc('day', read_at)::date AS read_date
+                        FROM base
+                    ),
+                    genre_stats AS (
+                        SELECT unnest(genres) AS genre, COUNT(*) AS count
+                        FROM enriched
+                        GROUP BY genre
+                        ORDER BY count DESC
+                        LIMIT 10
+                    ),
+                    dow_stats AS (
+                        SELECT EXTRACT(DOW FROM read_at)::int AS dow, COUNT(*) AS count
+                        FROM base
+                        GROUP BY dow
+                        ORDER BY dow
+                    ),
+                    hour_stats AS (
+                        SELECT EXTRACT(HOUR FROM read_at)::int AS hour, COUNT(*) AS count
+                        FROM base
+                        GROUP BY hour
+                        ORDER BY hour
+                    )
+                    SELECT total_reads, unique_manga FROM aggregates;
+                    SELECT read_date FROM read_dates ORDER BY read_date;
+                    SELECT genre, count FROM genre_stats;
+                    SELECT dow, count FROM dow_stats;
+                    SELECT hour, count FROM hour_stats;";
+
+                int totalReads, uniqueManga, currentStreak, longestStreak;
+                double avgPerDay;
+                List<DateTime> sortedDates;
+                List<GenreReadCount> topGenres;
+                List<DayOfWeekReadCount> readsByDayOfWeek;
+                List<HourReadCount> readsByHour;
+
+                using (var multi = await _postgresService.Connection.QueryMultipleAsync(multiQuery, new { userId, interval = intervalParam }))
+                {
+                    var agg = await multi.ReadFirstOrDefaultAsync();
+                    if (agg == null)
+                    {
+                        totalReads = 0;
+                        uniqueManga = 0;
+                    }
+                    else
+                    {
+                        var aggVals = (IDictionary<string, object?>)agg;
+                        totalReads = Convert.ToInt32(aggVals["total_reads"]);
+                        uniqueManga = Convert.ToInt32(aggVals["unique_manga"]);
+                    }
+
+                    avgPerDay = range > 0 ? Math.Round((double)totalReads / range, 2) : 0;
+
+                    sortedDates = (await multi.ReadAsync<DateTime>()).ToList();
+
+                    currentStreak = 0;
+                    var today = DateTime.UtcNow.Date;
+                    for (var d = today; d >= today.AddDays(-range + 1); d = d.AddDays(-1))
+                    {
+                        if (sortedDates.Contains(d))
+                            currentStreak++;
+                        else
+                            break;
+                    }
+
+                    longestStreak = 0;
+                    if (sortedDates.Count > 0)
+                    {
+                        var temp = 1;
+                        for (var i = 1; i < sortedDates.Count; i++)
+                        {
+                            if ((sortedDates[i] - sortedDates[i - 1]).Days == 1)
+                                temp++;
+                            else
+                            {
+                                if (temp > longestStreak) longestStreak = temp;
+                                temp = 1;
+                            }
+                        }
+                        if (temp > longestStreak) longestStreak = temp;
+                    }
+
+                    topGenres = new List<GenreReadCount>();
+                    foreach (var r in await multi.ReadAsync())
+                    {
+                        var vals = (IDictionary<string, object?>)r;
+                        topGenres.Add(new GenreReadCount
+                        {
+                            Genre = (string)vals["genre"]!,
+                            Count = Convert.ToInt32(vals["count"])
+                        });
+                    }
+
+                    readsByDayOfWeek = new List<DayOfWeekReadCount>();
+                    foreach (var r in await multi.ReadAsync())
+                    {
+                        var vals = (IDictionary<string, object?>)r;
+                        readsByDayOfWeek.Add(new DayOfWeekReadCount
+                        {
+                            DayOfWeek = Convert.ToInt32(vals["dow"]),
+                            Count = Convert.ToInt32(vals["count"])
+                        });
+                    }
+
+                    readsByHour = new List<HourReadCount>();
+                    foreach (var r in await multi.ReadAsync())
+                    {
+                        var vals = (IDictionary<string, object?>)r;
+                        readsByHour.Add(new HourReadCount
+                        {
+                            Hour = Convert.ToInt32(vals["hour"]),
+                            Count = Convert.ToInt32(vals["count"])
+                        });
+                    }
+                }
+
+                await _postgresService.CloseAsync();
+                return Ok(SuccessResponse<ReadingHistoryStatsResponse>.Create(new ReadingHistoryStatsResponse
+                {
+                    TotalReads = totalReads,
+                    UniqueManga = uniqueManga,
+                    AvgPerDay = avgPerDay,
+                    CurrentStreak = currentStreak,
+                    LongestStreak = longestStreak,
+                    TopGenres = topGenres,
+                    ReadsByDayOfWeek = readsByDayOfWeek,
+                    ReadsByHour = readsByHour
+                }));
+            }
+            catch (Exception ex)
+            {
+                await _postgresService.CloseAsync();
+                return StatusCode(500, ErrorResponse.Create("Failed to retrieve reading history stats", ex.Message));
             }
         }
 
@@ -703,15 +966,21 @@ namespace AkariApi.Controllers
                                 )
                             END as chapter_id
                         FROM input_data i
+                    ),
+                    upserted AS (
+                        INSERT INTO user_bookmarks (user_id, manga_id, last_read_chapter_id, updated_at, created_at)
+                        SELECT @userId, manga_id, chapter_id, NOW(), NOW()
+                        FROM resolved_chapters
+                        WHERE chapter_id IS NOT NULL
+                        ON CONFLICT (user_id, manga_id)
+                        DO UPDATE SET
+                            last_read_chapter_id = EXCLUDED.last_read_chapter_id,
+                            updated_at = NOW()
+                        RETURNING user_id, manga_id, last_read_chapter_id
                     )
-                    INSERT INTO user_bookmarks (user_id, manga_id, last_read_chapter_id, updated_at, created_at)
-                    SELECT @userId, manga_id, chapter_id, NOW(), NOW()
-                    FROM resolved_chapters
-                    WHERE chapter_id IS NOT NULL
-                    ON CONFLICT (user_id, manga_id)
-                    DO UPDATE SET
-                        last_read_chapter_id = EXCLUDED.last_read_chapter_id,
-                        updated_at = NOW()";
+                    INSERT INTO reading_history (user_id, manga_id, chapter_id)
+                    SELECT user_id, manga_id, last_read_chapter_id
+                    FROM upserted";
 
                 await _postgresService.Connection.ExecuteAsync(batchQuery, new
                 {
